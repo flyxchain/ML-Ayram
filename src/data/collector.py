@@ -99,7 +99,9 @@ def fetch_daily(pair: str, from_dt: datetime, to_dt: datetime) -> pd.DataFrame:
 
 def resample_h4(df_h1: pd.DataFrame) -> pd.DataFrame:
     """Construye H4 desde H1."""
-    df = df_h1.copy().set_index("timestamp")
+    df = df_h1.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df = df.set_index("timestamp")
     df4 = df.resample("4h").agg({
         "open":   "first",
         "high":   "max",

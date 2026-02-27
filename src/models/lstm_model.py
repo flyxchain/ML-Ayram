@@ -43,7 +43,7 @@ FEATURE_COLS = [
     "williams_r", "roc_10", "cci_20",
     "atr_14", "atr_7",
     "bb_width", "bb_pct",
-    "kc_width", "kc_pct",
+    "kc_width",
     "dc_width",
     "volume_ratio_20",
     "price_vs_sh", "price_vs_sl",
@@ -293,7 +293,7 @@ def load_model(pair: str, timeframe: str) -> tuple:
     if not files:
         raise FileNotFoundError(f"No hay modelo LSTM guardado para {pair} {timeframe}")
 
-    checkpoint = torch.load(str(files[-1]), map_location=DEVICE)
+    checkpoint = torch.load(str(files[-1]), map_location=DEVICE, weights_only=False)
     cfg   = checkpoint["model_config"]
     model = ForexLSTM(
         input_size  = cfg["input_size"],

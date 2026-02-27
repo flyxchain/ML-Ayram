@@ -10,8 +10,12 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 import optuna
-import mlflow
-import mlflow.xgboost
+try:
+    import mlflow
+    import mlflow.xgboost
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import classification_report, f1_score
 from sklearn.preprocessing import LabelEncoder
@@ -36,7 +40,7 @@ FEATURE_COLS = [
     "williams_r", "roc_10", "cci_20",
     "atr_14", "atr_7",
     "bb_width", "bb_pct",
-    "kc_width", "kc_pct",
+    "kc_width",
     "dc_width",
     "volume_ratio_20",
     "price_vs_sh", "price_vs_sl",
@@ -266,7 +270,7 @@ def train_and_save(
     if optimize:
         params = optimize_hyperparams(X, y, n_trials=n_trials)
 
-    if use_mlflow:
+    if use_mlflow and MLFLOW_AVAILABLE:
         mlflow.set_tracking_uri(MLFLOW_URI)
         mlflow.set_experiment(f"xgboost_{pair}_{timeframe}")
         with mlflow.start_run():

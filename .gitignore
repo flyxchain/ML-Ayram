@@ -1,0 +1,51 @@
+# Archivos que Git debe ignorar
+
+# Credenciales y secretos
+.env
+*.pem
+*.key
+secrets/
+
+# Modelos entrenados (son muy grandes para Git)
+models/saved/*.pkl
+models/saved/*.h5
+models/saved/*.joblib
+
+# Datos descargados (se regeneran)
+data/raw/
+data/processed/
+
+# Entorno virtual Python
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+logs/*.log
+logs/*.txt
+
+# IDEs
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# SO
+.DS_Store
+Thumbs.db
+
+# MLflow local
+mlruns/
+mlartifacts/
+
+# Backups
+backups/
+*.sql.gz

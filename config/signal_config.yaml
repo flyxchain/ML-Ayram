@@ -1,0 +1,124 @@
+# ============================================================
+# ML-Ayram — Configuración del Motor de Señales y Modelos
+# Edita estos parámetros para ajustar el comportamiento del bot
+# ============================================================
+
+# ── Pares y Timeframes ───────────────────────────────────────
+trading:
+  pairs:
+    - EURUSD
+    - GBPUSD
+    - USDJPY
+    - EURJPY
+    - XAUUSD
+  timeframes:
+    primary:    H1      # Timeframe principal para señales
+    confirm:    H4      # Timeframe de confirmación (tendencia)
+    fast:       M15     # Timeframe rápido (entrada precisa)
+    macro:      D1      # Tendencia macro
+  history_years: 3      # Años de histórico a descargar
+
+# ── Motor de Señales ─────────────────────────────────────────
+signal_engine:
+  min_confidence:           0.72    # Confianza mínima del modelo (72%)
+  min_tf_confluence:        2       # Mínimo de timeframes alineados
+  max_simultaneous_signals: 3       # Máximo señales abiertas a la vez
+  cooldown_hours:           4       # Espera entre señales del mismo par
+  session_filter:           true    # Solo operar en sesiones activas
+  active_sessions:                  # Sesiones permitidas
+    - london
+    - newyork
+    - overlap                       # London + NY overlap (mejor liquidez)
+
+# ── Gestión de Riesgo ────────────────────────────────────────
+risk_manager:
+  max_risk_per_trade:    0.015   # 1.5% del capital por operación
+  max_daily_drawdown:    0.04    # Para el bot si pérdida diaria > 4%
+  max_weekly_drawdown:   0.08    # Para el bot si pérdida semanal > 8%
+  kelly_fraction:        0.25    # Kelly Criterion al 25% (muy conservador)
+  min_lot_size:          0.01    # Lote mínimo (micro lote)
+  max_lot_size:          1.0     # Lote máximo por operación
+
+# ── Cálculo de SL/TP ─────────────────────────────────────────
+sl_tp:
+  sl_atr_multiplier:    1.5     # SL = 1.5 × ATR(14)
+  tp1_rr:               1.5     # TP1: ratio riesgo/beneficio 1:1.5
+  tp2_rr:               2.5     # TP2: ratio riesgo/beneficio 1:2.5
+  tp1_close_percent:    50      # Cerrar 50% de la posición en TP1
+  trailing_stop:        true    # Activar trailing stop al alcanzar TP1
+  trailing_atr_mult:    1.0     # Trailing stop = 1.0 × ATR(14) desde máximo
+
+# ── Modelo ML ────────────────────────────────────────────────
+model:
+  # XGBoost (clasificador de régimen)
+  xgboost:
+    n_estimators:       500
+    max_depth:          6
+    learning_rate:      0.05
+    subsample:          0.8
+    colsample_bytree:   0.8
+    min_child_weight:   10
+    n_jobs:             -1      # Usar todos los cores disponibles
+  
+  # LSTM (predictor de dirección)
+  lstm:
+    sequence_length:    60      # Ventana de 60 velas para contexto
+    layers:             2       # 2 capas LSTM
+    units:              128     # Unidades por capa
+    dropout:            0.3
+    batch_size:         256
+    epochs:             100
+    early_stopping:     true
+    patience:           10      # Para si no mejora en 10 epochs
+  
+  # Entrenamiento y validación
+  training:
+    walk_forward_periods: 8     # 8 períodos OOS de 3 meses
+    test_months:          3     # Cada período OOS dura 3 meses
+    min_oos_accuracy:     0.55  # Mínimo accuracy fuera de muestra
+    min_profit_factor:    1.25  # Mínimo profit factor en OOS
+    optuna_trials:        100   # Iteraciones de búsqueda de hiperparámetros
+    retrain_day:          "sun" # Día de la semana para reentrenar (automático)
+    retrain_hour:         2     # Hora del reentrenamiento (2am UTC)
+
+# ── Features ─────────────────────────────────────────────────
+features:
+  # Medias móviles
+  ema_periods: [20, 50, 200]
+  # ATR
+  atr_period: 14
+  # RSI
+  rsi_period: 14
+  # Bollinger Bands
+  bb_period: 20
+  bb_std: 2
+  # MACD
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  # ADX
+  adx_period: 14
+  # Stochastic
+  stoch_k: 14
+  stoch_d: 3
+  # CCI
+  cci_period: 20
+  # Volume
+  volume_ma_period: 20
+  # Swing structure
+  swing_lookback: 20
+
+# ── Triple-Barrier (etiquetado) ──────────────────────────────
+labeling:
+  barrier_up_atr_mult:   1.5   # Barrera superior = 1.5 × ATR
+  barrier_down_atr_mult: 1.0   # Barrera inferior = 1.0 × ATR
+  max_holding_bars:       20    # Máximo velas hasta expirar la etiqueta
+  min_return_threshold:   0.0003  # Filtrar movimientos muy pequeños (<3 pips)
+
+# ── Logging y Monitorización ─────────────────────────────────
+logging:
+  level:          INFO
+  file:           logs/bot.log
+  max_size_mb:    50
+  backup_count:   7             # Mantener 7 días de logs
+  telegram_errors: true         # Enviar errores críticos por Telegram

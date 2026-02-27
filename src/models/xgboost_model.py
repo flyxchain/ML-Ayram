@@ -17,8 +17,7 @@ try:
 except ImportError:
     MLFLOW_AVAILABLE = False
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import classification_report, f1_score
-from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import f1_score
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
 from loguru import logger
@@ -290,10 +289,11 @@ def train_and_save(
 
 
 if __name__ == "__main__":
-    # Entrena todos los pares en H1 sin optimización (rápido)
-    pairs = ["EURUSD", "GBPUSD", "USDJPY", "EURJPY", "XAUUSD"]
-    for pair in pairs:
-        try:
-            train_and_save(pair, "H1", optimize=False, use_mlflow=False)
-        except Exception as e:
-            logger.error(f"Error {pair}: {e}")
+    pairs      = ["EURUSD", "GBPUSD", "USDJPY", "EURJPY", "XAUUSD"]
+    timeframes = ["M15", "H1", "H4"]
+    for tf in timeframes:
+        for pair in pairs:
+            try:
+                train_and_save(pair, tf, optimize=False, use_mlflow=False)
+            except Exception as e:
+                logger.error(f"Error {pair} {tf}: {e}")

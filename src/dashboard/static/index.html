@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ML-Ayram Dashboard</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --border:   #30363d;
+    --text:     #e6edf3;
+    --muted:    #8b949e;
+    --green:    #3fb950;
+    --red:      #f85149;
+    --blue:     #58a6ff;
+    --yellow:   #d29922;
+    --purple:   #bc8cff;
+    --radius:   8px;
+    --nav-h:    56px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+
+  /* NAV */
+  nav { height: var(--nav-h); background: var(--surface); border-bottom: 1px solid var(--border);
+        display: flex; align-items: center; padding: 0 24px; gap: 32px; position: sticky; top: 0; z-index: 100; }
+  .nav-brand { font-weight: 700; font-size: 16px; color: var(--blue); letter-spacing: .5px; }
+  .nav-links { display: flex; gap: 4px; }
+  .nav-link { padding: 6px 14px; border-radius: var(--radius); cursor: pointer; color: var(--muted);
+              border: none; background: none; font-size: 14px; transition: all .15s; }
+  .nav-link:hover { color: var(--text); background: var(--border); }
+  .nav-link.active { color: var(--text); background: #21262d; }
+  .nav-status { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* LAYOUT */
+  .page { display: none; padding: 24px; max-width: 1400px; margin: 0 auto; }
+  .page.active { display: block; }
+
+  /* CARDS */
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .card-title { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 8px; }
+  .card-value { font-size: 28px; font-weight: 700; }
+  .card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .green { color: var(--green); }
+  .red   { color: var(--red); }
+  .blue  { color: var(--blue); }
+  .yellow{ color: var(--yellow); }
+  .purple{ color: var(--purple); }
+
+  /* SECTION */
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-title { font-size: 16px; font-weight: 600; }
+
+  /* TABLE */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; color: var(--muted); font-weight: 500;
+       border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 12px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+  tr:hover td { background: #21262d44; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-long  { background: #3fb95022; color: var(--green); border: 1px solid #3fb95044; }
+  .badge-short { background: #f8514922; color: var(--red);   border: 1px solid #f8514944; }
+  .badge-neut  { background: #8b949e22; color: var(--muted); border: 1px solid #8b949e44; }
+  .conf-bar { width: 60px; height: 6px; background: var(--border); border-radius: 3px; display: inline-block; vertical-align: middle; overflow: hidden; }
+  .conf-fill { height: 100%; background: var(--blue); border-radius: 3px; }
+
+  /* CHART */
+  #chart-container { height: 480px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .chart-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  select, input[type=number], input[type=range] {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    border-radius: var(--radius); padding: 6px 10px; font-size: 13px; outline: none; }
+  select:focus, input:focus { border-color: var(--blue); }
+
+  /* CONFIG */
+  .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .field input[type=number] { width: 100%; }
+  .field-toggle { display: flex; align-items: center; gap: 10px; }
+  .toggle { width: 40px; height: 22px; background: var(--border); border-radius: 11px; position: relative; cursor: pointer; transition: background .2s; }
+  .toggle.on { background: var(--green); }
+  .toggle::after { content:''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+                   border-radius: 50%; background: white; transition: left .2s; }
+  .toggle.on::after { left: 21px; }
+  btn, .btn { padding: 8px 18px; border-radius: var(--radius); border: none; cursor: pointer;
+              font-size: 14px; font-weight: 500; transition: opacity .15s; }
+  .btn-primary { background: var(--blue); color: #0d1117; }
+  .btn-primary:hover { opacity: .85; }
+  .btn-ghost { background: var(--border); color: var(--text); }
+  .btn-ghost:hover { opacity: .85; }
+  .save-msg { font-size: 12px; color: var(--green); display: none; }
+
+  /* PAGINATION */
+  .pagination { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
+  .page-btn { padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border);
+              background: none; color: var(--text); cursor: pointer; }
+  .page-btn:disabled { opacity: .3; cursor: default; }
+  .page-info { color: var(--muted); font-size: 13px; }
+
+  /* FILTERS */
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+
+  /* METRICS CHARTS */
+  .chart-sm { height: 220px; }
+
+  /* SPINNER */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border);
+             border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media(max-width:900px) {
+    .grid-4 { grid-template-columns: 1fr 1fr; }
+    .config-grid { grid-template-columns: 1fr; }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+  @media(max-width:500px) {
+    .grid-4 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <span class="nav-brand">📈 ML-Ayram</span>
+  <div class="nav-links">
+    <button class="nav-link active" onclick="showPage('dashboard')">Dashboard</button>
+    <button class="nav-link" onclick="showPage('chart')">Gráfico</button>
+    <button class="nav-link" onclick="showPage('history')">Historial</button>
+    <button class="nav-link" onclick="showPage('metrics')">Métricas</button>
+    <button class="nav-link" onclick="showPage('config')">Configuración</button>
+  </div>
+  <div class="nav-status">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">Conectando…</span>
+  </div>
+</nav>
+
+<!-- ══════════ DASHBOARD ══════════ -->
+<div id="page-dashboard" class="page active">
+  <div class="grid-4">
+    <div class="card">
+      <div class="card-title">Señales hoy</div>
+      <div class="card-value blue" id="kpi-today">—</div>
+      <div class="card-sub">señales válidas</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Última señal</div>
+      <div class="card-value" id="kpi-last-dir">—</div>
+      <div class="card-sub" id="kpi-last-ts">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Total señales</div>
+      <div class="card-value purple" id="kpi-total">—</div>
+      <div class="card-sub">en BD</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Velas en BD</div>
+      <div class="card-value yellow" id="kpi-bars">—</div>
+      <div class="card-sub">OHLCV raw</div>
+    </div>
+  </div>
+
+  <!-- Últimas señales -->
+  <div class="card">
+    <div class="section-header">
+      <span class="section-title">Señales recientes</span>
+      <button class="btn btn-ghost" onclick="loadLatest()">↻ Actualizar</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Hora (UTC)</th><th>Par</th><th>TF</th><th>Dirección</th>
+            <th>Entrada</th><th>TP</th><th>SL</th><th>R:R</th>
+            <th>Confianza</th><th>ADX</th><th>Sesión</th><th>Estado</th>
+          </tr>
+        </thead>
+        <tbody id="latest-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ GRÁFICO ══════════ -->
+<div id="page-chart" class="page">
+  <div class="card" style="margin-bottom:16px">
+    <div class="chart-controls">
+      <select id="chart-pair">
+        <option>EURUSD</option><option>GBPUSD</option>
+        <option>USDJPY</option><option>EURJPY</option><option>XAUUSD</option>
+      </select>
+      <select id="chart-tf">
+        <option>M15</option><option value="H1" selected>H1</option>
+        <option>H4</option><option>D1</option>
+      </select>
+      <select id="chart-bars">
+        <option value="100">100 velas</option>
+        <option value="200" selected>200 velas</option>
+        <option value="500">500 velas</option>
+      </select>
+      <button class="btn btn-primary" onclick="loadChart()">Cargar</button>
+      <label style="display:flex;align-items:center;gap:6px;color:var(--muted)">
+        <input type="checkbox" id="show-signals" checked onchange="loadChart()"> Señales
+      </label>
+    </div>
+  </div>
+  <div id="chart-container"></div>
+  <div id="chart-legend" style="padding:12px 0;color:var(--muted);font-size:12px">
+    🟢 Señal LONG &nbsp;|&nbsp; 🔴 Señal SHORT &nbsp;|&nbsp; Líneas punteadas: TP (verde) / SL (rojo)
+  </div>
+</div>
+
+<!-- ══════════ HISTORIAL ══════════ -->
+<div id="page-history" class="page">
+  <div class="filters">
+    <select id="hist-pair">
+      <option value="">Todos los pares</option>
+      <option>EURUSD</option><option>GBPUSD</option>
+      <option>USDJPY</option><option>EURJPY</option><option>XAUUSD</option>
+    </select>
+    <select id="hist-tf">
+      <option value="">Todos TF</option>
+      <option>M15</option><option>H1</option><option>H4</option>
+    </select>
+    <select id="hist-dir">
+      <option value="">Todas direcciones</option>
+      <option value="1">LONG</option>
+      <option value="-1">SHORT</option>
+    </select>
+    <select id="hist-days">
+      <option value="7">7 días</option>
+      <option value="30" selected>30 días</option>
+      <option value="90">90 días</option>
+      <option value="365">1 año</option>
+    </select>
+    <button class="btn btn-primary" onclick="loadHistory(1)">Filtrar</button>
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Hora (UTC)</th><th>Par</th><th>TF</th><th>Dirección</th>
+            <th>Entrada</th><th>TP</th><th>SL</th><th>R:R</th>
+            <th>TP pips</th><th>SL pips</th><th>Confianza</th>
+            <th>XGB</th><th>LSTM</th><th>ADX</th><th>Sesión</th>
+          </tr>
+        </thead>
+        <tbody id="hist-tbody"></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button class="page-btn" id="hist-prev" onclick="histPage(-1)">‹ Anterior</button>
+      <span class="page-info" id="hist-page-info"></span>
+      <button class="page-btn" id="hist-next" onclick="histPage(1)">Siguiente ›</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ MÉTRICAS ══════════ -->
+<div id="page-metrics" class="page">
+  <div class="filters">
+    <select id="met-pair">
+      <option value="">Todos los pares</option>
+      <option>EURUSD</option><option>GBPUSD</option>
+      <option>USDJPY</option><option>EURJPY</option><option>XAUUSD</option>
+    </select>
+    <select id="met-tf">
+      <option value="">Todos TF</option>
+      <option>M15</option><option>H1</option><option>H4</option>
+    </select>
+    <select id="met-days">
+      <option value="30">30 días</option>
+      <option value="90" selected>90 días</option>
+      <option value="180">180 días</option>
+      <option value="365">1 año</option>
+    </select>
+    <button class="btn btn-primary" onclick="loadMetrics()">Aplicar</button>
+  </div>
+
+  <div class="grid-4">
+    <div class="card">
+      <div class="card-title">Total señales</div>
+      <div class="card-value blue" id="m-total">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Conf. promedio</div>
+      <div class="card-value green" id="m-conf">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">R:R promedio</div>
+      <div class="card-value yellow" id="m-rr">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Acuerdo modelos</div>
+      <div class="card-value purple" id="m-agree">—</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="section-title" style="margin-bottom:14px">Distribución Long / Short</div>
+      <div class="chart-sm"><canvas id="chart-dir"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:14px">Señales por par</div>
+      <div class="chart-sm"><canvas id="chart-pairs"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title" style="margin-bottom:14px">Señales por día (últimos 30 días)</div>
+    <div style="height:200px"><canvas id="chart-daily"></canvas></div>
+  </div>
+
+  <div class="grid-2" style="margin-top:16px">
+    <div class="card">
+      <div class="section-title" style="margin-bottom:14px">Acuerdo XGBoost vs LSTM</div>
+      <div class="chart-sm"><canvas id="chart-models"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:14px">Señales por timeframe</div>
+      <div class="chart-sm"><canvas id="chart-tf-dist"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ CONFIGURACIÓN ══════════ -->
+<div id="page-config" class="page">
+  <div class="card" style="max-width:700px">
+    <div class="section-header">
+      <span class="section-title">Filtros del generador de señales</span>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:24px">
+      Estos parámetros se aplican en tiempo real a las nuevas señales. El cambio es inmediato y se mantiene mientras el servidor esté activo.
+    </p>
+
+    <div class="config-grid" id="config-form">
+      <div class="field">
+        <label>Confianza mínima (%)</label>
+        <input type="number" id="cfg-confidence" min="50" max="99" step="1" value="54">
+      </div>
+      <div class="field">
+        <label>ADX mínimo</label>
+        <input type="number" id="cfg-adx" min="0" max="100" step="1" value="20">
+      </div>
+      <div class="field">
+        <label>R:R mínimo</label>
+        <input type="number" id="cfg-rr" min="1" max="5" step="0.1" value="1.5">
+      </div>
+      <div class="field">
+        <label>Cooldown (velas)</label>
+        <input type="number" id="cfg-cooldown" min="0" max="20" step="1" value="3">
+      </div>
+      <div class="field">
+        <label>Multiplicador TP (× ATR)</label>
+        <input type="number" id="cfg-tp" min="1" max="5" step="0.1" value="2.0">
+      </div>
+      <div class="field">
+        <label>Multiplicador SL (× ATR)</label>
+        <input type="number" id="cfg-sl" min="0.5" max="3" step="0.1" value="1.0">
+      </div>
+      <div class="field">
+        <label>Permitir fuera de sesión</label>
+        <div class="field-toggle">
+          <div class="toggle" id="cfg-offmarket" onclick="toggleField('cfg-offmarket')"></div>
+          <span id="cfg-offmarket-label" style="color:var(--muted)">No</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px;align-items:center;margin-top:28px">
+      <button class="btn btn-primary" onclick="saveConfig()">💾 Guardar cambios</button>
+      <button class="btn btn-ghost" onclick="loadConfig()">↻ Recargar</button>
+      <span class="save-msg" id="save-msg">✅ Guardado correctamente</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ JS ══════════ -->
+<script>
+const API = '';
+let _chartInstance = null;
+let _chartSeries   = null;
+let _histCurrentPage = 1;
+let _histTotalPages  = 1;
+let _chartJsInstances = {};
+
+// ── Navegación ────────────────────────────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.target.classList.add('active');
+
+  if (name === 'chart')   loadChart();
+  if (name === 'history') loadHistory(1);
+  if (name === 'metrics') loadMetrics();
+  if (name === 'config')  loadConfig();
+}
+
+// ── Status ────────────────────────────────────────────────────────────────
+async function loadStatus() {
+  try {
+    const d = await fetch('/api/status').then(r => r.json());
+    document.getElementById('status-text').textContent = 'Online · ' + new Date().toLocaleTimeString('es');
+    document.getElementById('status-dot').style.background = 'var(--green)';
+
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    document.getElementById('kpi-total').textContent = d.total_signals?.toLocaleString() ?? '—';
+    document.getElementById('kpi-bars').textContent  = d.total_bars?.toLocaleString()    ?? '—';
+    document.getElementById('kpi-last-ts').textContent = d.last_signal_at
+      ? new Date(d.last_signal_at).toLocaleString('es') : '—';
+  } catch {
+    document.getElementById('status-dot').style.background = 'var(--red)';
+    document.getElementById('status-text').textContent = 'Sin conexión';
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function dirBadge(d) {
+  if (d === 1)  return '<span class="badge badge-long">LONG</span>';
+  if (d === -1) return '<span class="badge badge-short">SHORT</span>';
+  return '<span class="badge badge-neut">NEUTRAL</span>';
+}
+function confBar(c) {
+  const pct = Math.round((c ?? 0) * 100);
+  return `<span class="conf-bar"><span class="conf-fill" style="width:${pct}%"></span></span> ${pct}%`;
+}
+function fmts(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleString('es',{timeZone:'UTC',hour12:false}).replace(',','');
+}
+function fp(n, dec=5) { return n != null ? Number(n).toFixed(dec) : '—'; }
+
+// ── Últimas señales ───────────────────────────────────────────────────────
+async function loadLatest() {
+  const data = await fetch('/api/signals/latest?limit=30').then(r => r.json());
+
+  // KPI dirección última señal
+  const valid = data.filter(s => s.filter_reason == null && s.direction !== 0);
+  if (valid.length) {
+    const last = valid[0];
+    const el = document.getElementById('kpi-last-dir');
+    el.textContent = last.direction === 1 ? '🟢 LONG' : '🔴 SHORT';
+    el.className = 'card-value ' + (last.direction === 1 ? 'green' : 'red');
+    document.getElementById('kpi-last-ts').textContent = fmts(last.timestamp);
+  }
+  document.getElementById('kpi-today').textContent = valid.length;
+
+  const tbody = document.getElementById('latest-tbody');
+  tbody.innerHTML = data.map(s => `
+    <tr>
+      <td>${fmts(s.timestamp)}</td>
+      <td><b>${s.pair}</b></td>
+      <td>${s.timeframe}</td>
+      <td>${dirBadge(s.direction)}</td>
+      <td>${fp(s.entry_price)}</td>
+      <td class="green">${fp(s.tp_price)}</td>
+      <td class="red">${fp(s.sl_price)}</td>
+      <td>${s.rr_ratio?.toFixed(2) ?? '—'}</td>
+      <td>${confBar(s.confidence)}</td>
+      <td>${s.adx?.toFixed(1) ?? '—'}</td>
+      <td>${s.session ?? '—'}</td>
+      <td>${s.filter_reason
+        ? `<span style="color:var(--muted);font-size:11px">${s.filter_reason}</span>`
+        : '<span style="color:var(--green)">✅ Válida</span>'}</td>
+    </tr>`).join('');
+}
+
+// ── Gráfico de velas ──────────────────────────────────────────────────────
+async function loadChart() {
+  const pair  = document.getElementById('chart-pair').value;
+  const tf    = document.getElementById('chart-tf').value;
+  const bars  = document.getElementById('chart-bars').value;
+  const showSig = document.getElementById('show-signals').checked;
+
+  const container = document.getElementById('chart-container');
+  container.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100%;"><div class="spinner"></div></div>';
+
+  try {
+    const d = await fetch(`/api/chart/${pair}/${tf}?bars=${bars}`).then(r => r.json());
+    container.innerHTML = '';
+
+    const chart = LightweightCharts.createChart(container, {
+      width:  container.offsetWidth,
+      height: 480,
+      layout: { background: { color: '#161b22' }, textColor: '#e6edf3' },
+      grid:   { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: '#30363d' },
+      timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false },
+    });
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#3fb950', downColor: '#f85149',
+      borderUpColor: '#3fb950', borderDownColor: '#f85149',
+      wickUpColor: '#3fb950',   wickDownColor: '#f85149',
+    });
+
+    candleSeries.setData(d.candles.map(c => ({
+      time: c.timestamp, open: c.open, high: c.high, low: c.low, close: c.close
+    })));
+
+    // Señales como markers
+    if (showSig && d.signals.length) {
+      const markers = d.signals.map(s => ({
+        time:     s.timestamp,
+        position: s.direction === 1 ? 'belowBar' : 'aboveBar',
+        color:    s.direction === 1 ? '#3fb950' : '#f85149',
+        shape:    s.direction === 1 ? 'arrowUp' : 'arrowDown',
+        text:     `${s.direction === 1 ? '▲' : '▼'} ${Number(s.confidence * 100).toFixed(0)}%`,
+      }));
+      candleSeries.setMarkers(markers);
+
+      // Líneas TP/SL para la señal más reciente
+      const last = d.signals[d.signals.length - 1];
+      if (last) {
+        const tpLine = chart.addLineSeries({ color: '#3fb95077', lineWidth: 1, lineStyle: 2 });
+        const slLine = chart.addLineSeries({ color: '#f8514977', lineWidth: 1, lineStyle: 2 });
+        const t1 = d.candles[Math.max(0, d.candles.length - 50)].timestamp;
+        const t2 = d.candles[d.candles.length - 1].timestamp;
+        tpLine.setData([{ time: t1, value: last.tp_price }, { time: t2, value: last.tp_price }]);
+        slLine.setData([{ time: t1, value: last.sl_price }, { time: t2, value: last.sl_price }]);
+      }
+    }
+
+    chart.timeScale().fitContent();
+    window.addEventListener('resize', () => chart.applyOptions({ width: container.offsetWidth }));
+  } catch(e) {
+    container.innerHTML = `<div style="padding:24px;color:var(--red)">Error cargando gráfico: ${e.message}</div>`;
+  }
+}
+
+// ── Historial ─────────────────────────────────────────────────────────────
+async function loadHistory(page) {
+  _histCurrentPage = page;
+  const pair  = document.getElementById('hist-pair').value;
+  const tf    = document.getElementById('hist-tf').value;
+  const dir   = document.getElementById('hist-dir').value;
+  const days  = document.getElementById('hist-days').value;
+
+  let url = `/api/signals/history?page=${page}&page_size=50&days=${days}`;
+  if (pair) url += `&pair=${pair}`;
+  if (tf)   url += `&timeframe=${tf}`;
+  if (dir)  url += `&direction=${dir}`;
+
+  const data = await fetch(url).then(r => r.json());
+  _histTotalPages = data.pages;
+
+  const tbody = document.getElementById('hist-tbody');
+  tbody.innerHTML = data.signals.map(s => `
+    <tr>
+      <td>${fmts(s.timestamp)}</td>
+      <td><b>${s.pair}</b></td>
+      <td>${s.timeframe}</td>
+      <td>${dirBadge(s.direction)}</td>
+      <td>${fp(s.entry_price)}</td>
+      <td class="green">${fp(s.tp_price)}</td>
+      <td class="red">${fp(s.sl_price)}</td>
+      <td>${s.rr_ratio?.toFixed(2) ?? '—'}</td>
+      <td class="green">+${s.tp_pips?.toFixed(1) ?? '—'}</td>
+      <td class="red">-${s.sl_pips?.toFixed(1) ?? '—'}</td>
+      <td>${confBar(s.confidence)}</td>
+      <td>${dirBadge(s.xgb_direction)}</td>
+      <td>${dirBadge(s.lstm_direction)}</td>
+      <td>${s.adx?.toFixed(1) ?? '—'}</td>
+      <td>${s.session ?? '—'}</td>
+    </tr>`).join('');
+
+  document.getElementById('hist-page-info').textContent =
+    `Página ${page} de ${data.pages}  (${data.total} señales)`;
+  document.getElementById('hist-prev').disabled = page <= 1;
+  document.getElementById('hist-next').disabled = page >= data.pages;
+}
+
+function histPage(delta) { loadHistory(_histCurrentPage + delta); }
+
+// ── Métricas ──────────────────────────────────────────────────────────────
+function destroyChart(id) {
+  if (_chartJsInstances[id]) { _chartJsInstances[id].destroy(); delete _chartJsInstances[id]; }
+}
+function mkChart(id, type, labels, datasets, opts={}) {
+  destroyChart(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  _chartJsInstances[id] = new Chart(ctx, {
+    type, data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#e6edf3', font: { size: 12 } } } },
+      scales: type !== 'pie' && type !== 'doughnut' ? {
+        x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+        y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+      } : {},
+      ...opts,
+    }
+  });
+}
+
+async function loadMetrics() {
+  const pair = document.getElementById('met-pair').value;
+  const tf   = document.getElementById('met-tf').value;
+  const days = document.getElementById('met-days').value;
+
+  let url = `/api/metrics?days=${days}`;
+  if (pair) url += `&pair=${pair}`;
+  if (tf)   url += `&timeframe=${tf}`;
+
+  const m = await fetch(url).then(r => r.json());
+  if (m.error) { alert(m.error); return; }
+
+  document.getElementById('m-total').textContent = m.total_signals;
+  document.getElementById('m-conf').textContent  = m.avg_confidence + '%';
+  document.getElementById('m-rr').textContent    = m.avg_rr;
+  document.getElementById('m-agree').textContent = m.both_agree_pct + '%';
+
+  mkChart('chart-dir', 'doughnut',
+    ['LONG', 'SHORT'],
+    [{ data: [m.long_signals, m.short_signals], backgroundColor: ['#3fb950', '#f85149'] }]
+  );
+
+  const pairLabels = Object.keys(m.by_pair);
+  mkChart('chart-pairs', 'bar', pairLabels,
+    [{ label: 'Señales', data: Object.values(m.by_pair), backgroundColor: '#58a6ff88', borderColor: '#58a6ff', borderWidth: 1 }]
+  );
+
+  mkChart('chart-daily', 'bar',
+    m.signals_by_day.map(d => d.date),
+    [{ label: 'Señales/día', data: m.signals_by_day.map(d => d.count), backgroundColor: '#bc8cff88', borderColor: '#bc8cff', borderWidth: 1 }]
+  );
+
+  mkChart('chart-models', 'doughnut',
+    ['XGB ✓', 'LSTM ✓', 'Ambos ✓'],
+    [{ data: [m.xgb_agreement_pct, m.lstm_agreement_pct, m.both_agree_pct],
+       backgroundColor: ['#d29922', '#58a6ff', '#3fb950'] }]
+  );
+
+  const tfLabels = Object.keys(m.by_timeframe);
+  mkChart('chart-tf-dist', 'doughnut', tfLabels,
+    [{ data: Object.values(m.by_timeframe), backgroundColor: ['#58a6ff', '#3fb950', '#f85149'] }]
+  );
+}
+
+// ── Configuración ─────────────────────────────────────────────────────────
+async function loadConfig() {
+  const cfg = await fetch('/api/config').then(r => r.json());
+  document.getElementById('cfg-confidence').value = Math.round(cfg.min_confidence * 100);
+  document.getElementById('cfg-adx').value        = cfg.min_adx;
+  document.getElementById('cfg-rr').value         = cfg.min_rr;
+  document.getElementById('cfg-cooldown').value   = cfg.cooldown_bars;
+  document.getElementById('cfg-tp').value         = cfg.tp_multiplier;
+  document.getElementById('cfg-sl').value         = cfg.sl_multiplier;
+
+  const tog = document.getElementById('cfg-offmarket');
+  if (cfg.allow_offmarket) { tog.classList.add('on'); }
+  else { tog.classList.remove('on'); }
+  document.getElementById('cfg-offmarket-label').textContent = cfg.allow_offmarket ? 'Sí' : 'No';
+}
+
+function toggleField(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('on');
+  document.getElementById(id + '-label').textContent = el.classList.contains('on') ? 'Sí' : 'No';
+}
+
+async function saveConfig() {
+  const offmarket = document.getElementById('cfg-offmarket').classList.contains('on');
+  const body = {
+    min_confidence:  parseFloat(document.getElementById('cfg-confidence').value) / 100,
+    min_adx:         parseFloat(document.getElementById('cfg-adx').value),
+    min_rr:          parseFloat(document.getElementById('cfg-rr').value),
+    cooldown_bars:   parseInt(document.getElementById('cfg-cooldown').value),
+    tp_multiplier:   parseFloat(document.getElementById('cfg-tp').value),
+    sl_multiplier:   parseFloat(document.getElementById('cfg-sl').value),
+    allow_offmarket: offmarket,
+  };
+  const res = await fetch('/api/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  if (res.ok) {
+    const msg = document.getElementById('save-msg');
+    msg.style.display = 'inline';
+    setTimeout(() => msg.style.display = 'none', 3000);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+loadStatus();
+loadLatest();
+setInterval(() => { loadStatus(); loadLatest(); }, 30000);
+</script>
+</body>
+</html>

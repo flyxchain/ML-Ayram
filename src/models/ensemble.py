@@ -201,7 +201,7 @@ def signal_stats(result: pd.DataFrame) -> dict:
 
 
 if __name__ == "__main__":
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, text
     from dotenv import load_dotenv
     import os
     load_dotenv()

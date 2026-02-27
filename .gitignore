@@ -10,6 +10,9 @@ secrets/
 models/saved/*.pkl
 models/saved/*.h5
 models/saved/*.joblib
+models/saved/*.pt
+models/saved/*.ubj
+models/saved/*_meta.json
 
 # Datos descargados (se regeneran)
 data/raw/
@@ -46,7 +49,9 @@ Thumbs.db
 mlruns/
 mlartifacts/
 
+# Resultados de backtesting (se regeneran)
+results/
+
 # Backups
 backups/
 *.sql.gz
-*.ubj

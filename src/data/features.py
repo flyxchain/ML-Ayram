@@ -7,7 +7,7 @@ Usa la librería `ta` (compatible Python 3.14).
 import pandas as pd
 import numpy as np
 from ta import trend, momentum, volatility, volume
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from loguru import logger
 import os
@@ -204,10 +204,11 @@ def process_pair_timeframe(pair: str, timeframe: str, engine) -> int:
     logger.info(f"Calculando features: {pair} {timeframe}")
 
     df = pd.read_sql(
-        f"""SELECT * FROM ohlcv_raw
-            WHERE pair='{pair}' AND timeframe='{timeframe}'
-            ORDER BY timestamp""",
-        engine
+        text("""SELECT * FROM ohlcv_raw
+            WHERE pair = :pair AND timeframe = :tf
+            ORDER BY timestamp"""),
+        engine,
+        params={"pair": pair, "tf": timeframe},
     )
 
     if len(df) < 210:
@@ -221,10 +222,11 @@ def process_pair_timeframe(pair: str, timeframe: str, engine) -> int:
     if timeframe in htf_map:
         htf = htf_map[timeframe]
         df_htf_raw = pd.read_sql(
-            f"""SELECT * FROM ohlcv_raw
-                WHERE pair='{pair}' AND timeframe='{htf}'
-                ORDER BY timestamp""",
-            engine
+            text("""SELECT * FROM ohlcv_raw
+                WHERE pair = :pair AND timeframe = :htf
+                ORDER BY timestamp"""),
+            engine,
+            params={"pair": pair, "htf": htf},
         )
         if len(df_htf_raw) >= 210:
             df_htf = compute_features(df_htf_raw)
@@ -268,7 +270,6 @@ def process_pair_timeframe(pair: str, timeframe: str, engine) -> int:
     cols = [c for c in cols if c in df.columns]
     df_save = df[cols].dropna(subset=["ema_200"])  # eliminar filas sin suficiente historia
 
-    from sqlalchemy import text
     rows = df_save.to_dict("records")
 
     # Convertir tipos numpy a Python nativos

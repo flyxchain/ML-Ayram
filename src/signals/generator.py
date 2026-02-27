@@ -194,10 +194,8 @@ def _last_signal_bars_ago(pair: str, timeframe: str, engine) -> int:
     if row.empty:
         return 9999   # nunca ha habido señal → sin restricción
 
-    last_ts = pd.to_datetime(row["timestamp"].iloc[0])
-    now     = datetime.now(timezone.utc)
-    if last_ts.tzinfo is None:
-        last_ts = last_ts.replace(tzinfo=timezone.utc)
+    last_ts = pd.Timestamp(row["timestamp"].iloc[0]).tz_localize("UTC") if pd.to_datetime(row["timestamp"].iloc[0]).tzinfo is None else pd.Timestamp(row["timestamp"].iloc[0]).tz_convert("UTC")
+    now     = pd.Timestamp.now(tz="UTC")
 
     # Aproximar barras por minutos del timeframe
     tf_minutes = {"M15": 15, "H1": 60, "H4": 240, "D1": 1440}
@@ -209,7 +207,12 @@ def _last_signal_bars_ago(pair: str, timeframe: str, engine) -> int:
 def _save_signal(signal: SignalResult, engine) -> None:
     """Inserta o actualiza la señal en la tabla signals."""
     row = asdict(signal)
-    row["timestamp"] = signal.timestamp.isoformat() if hasattr(signal.timestamp, "isoformat") else str(signal.timestamp)
+    # Normalizar timestamp a string ISO compatible con PostgreSQL
+    ts = signal.timestamp
+    if hasattr(ts, "isoformat"):
+        row["timestamp"] = ts.isoformat()
+    else:
+        row["timestamp"] = str(ts)
 
     sql = text("""
         INSERT INTO signals (
@@ -303,7 +306,8 @@ def generate_signal(
     prob_neutral = float(last_pred["prob_neutral"])
     prob_short   = float(last_pred["prob_short"])
     xgb_dir      = int(last_pred["xgb_direction"])
-    lstm_dir     = int(last_pred.get("lstm_direction", 0) or 0)
+    _lstm_raw    = last_pred.get("lstm_direction", 0)
+    lstm_dir     = int(_lstm_raw) if not pd.isna(_lstm_raw) else 0
     agreement    = bool(last_pred["agreement"])
 
     # 3. Calcular TP / SL
@@ -403,18 +407,24 @@ def run_once(
     """
     engine  = create_engine(DATABASE_URL)
     valid   = []
-    models_cache = {}   # evitar cargar el mismo modelo N veces
+    models_cache  = {}   # modelos cargados con éxito
+    failed_models = set()  # pares/tf sin modelo disponible (no reintentar)
 
     for tf in timeframes:
         for pair in pairs:
             key = (pair, tf)
+
+            if key in failed_models:
+                continue  # no reintentar en este ciclo
+
             if key not in models_cache:
                 try:
                     from src.models.ensemble import load_models
                     models_cache[key] = load_models(pair, tf)
                 except Exception as e:
                     logger.warning(f"No se pudo cargar modelo {pair} {tf}: {e}")
-                    models_cache[key] = (None, None, None, None)
+                    failed_models.add(key)
+                    continue  # saltar generate_signal, evita doble carga
 
             xgb_m, lstm_m, lstm_s, lstm_f = models_cache[key]
             signal = generate_signal(
@@ -446,9 +456,7 @@ def run_loop(
     logger.info(f"Iniciando generador de señales — intervalo {interval_seconds}s")
     while True:
         try:
-            signals = run_once(pairs, timeframes, filters)
-            for s in signals:
-                logger.success(s.summary())
+            run_once(pairs, timeframes, filters)  # generate_signal ya loguea internamente
         except Exception as e:
             logger.error(f"Error en ciclo de señales: {e}")
 

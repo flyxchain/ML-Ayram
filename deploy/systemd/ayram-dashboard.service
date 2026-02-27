@@ -1,0 +1,39 @@
+[Unit]
+Description=ML-Ayram Dashboard (FastAPI + Uvicorn)
+Documentation=https://github.com/ayram/ml-ayram
+After=network-online.target postgresql.service
+Wants=network-online.target
+StartLimitIntervalSec=120s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ayram
+Group=ayram
+WorkingDirectory=/home/ayram/ml-ayram
+
+# Cargar variables de entorno desde .env
+EnvironmentFile=/home/ayram/ml-ayram/.env
+
+ExecStart=/home/ayram/ml-ayram/venv/bin/uvicorn \
+    src.dashboard.app:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --workers 1 \
+    --log-level info
+
+# Reiniciar si peta, con backoff exponencial
+Restart=on-failure
+RestartSec=10s
+
+# Logs van a journald (ver con: journalctl -u ayram-dashboard -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ayram-dashboard
+
+# Seguridad básica
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

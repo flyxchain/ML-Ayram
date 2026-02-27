@@ -62,11 +62,14 @@ def load_dataset(pair: str, timeframe: str) -> tuple[pd.DataFrame, pd.Series]:
     """Carga features + labels desde la BD."""
     engine = create_engine(DATABASE_URL)
     df = pd.read_sql(
-        f"""SELECT * FROM features_computed
-            WHERE pair='{pair}' AND timeframe='{timeframe}'
-            AND label IS NOT NULL
-            ORDER BY timestamp""",
-        engine
+        text("""
+            SELECT * FROM features_computed
+            WHERE pair = :pair AND timeframe = :tf
+              AND label IS NOT NULL
+            ORDER BY timestamp
+        """),
+        engine,
+        params={"pair": pair, "tf": timeframe},
     )
     if df.empty:
         raise ValueError(f"Sin datos etiquetados para {pair} {timeframe}")

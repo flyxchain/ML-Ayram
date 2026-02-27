@@ -119,7 +119,7 @@ def send_signal(signal) -> bool:
         f"   Long  {signal.prob_long:.0%}  |  Neutral {signal.prob_neutral:.0%}  |  Short {signal.prob_short:.0%}\n"
         f"   XGBoost: {DIR_LABEL.get(signal.xgb_direction,'?')}  |  LSTM: {DIR_LABEL.get(signal.lstm_direction,'?')}\n"
         f"\n"
-        f"📊 <b>ADX:</b> {signal.adx:.1f}  |  <b>ATR:</b> {signal.atr_14:.5f}\n"
+        f"📊 <b>ADX:</b> {signal.adx:.1f}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"<i>⚠️ No es asesoramiento financiero.</i>"
     )
@@ -203,9 +203,9 @@ def test_connection() -> bool:
 def notify_if_valid(signal) -> None:
     """
     Wrapper conveniente para usar desde generator.py:
-    Si la señal es válida la notifica, si no la ignora silenciosamente.
+    Si la señal es válida (direction != 0 y sin filter_reason) la notifica.
     """
-    if signal and signal.is_valid:
+    if signal and getattr(signal, 'direction', 0) != 0 and not getattr(signal, 'filter_reason', None):
         send_signal(signal)
 
 

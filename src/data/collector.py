@@ -40,6 +40,22 @@ BASE_URL = "https://eodhd.com/api/intraday/{symbol}"
 EOD_URL  = "https://eodhd.com/api/eod/{symbol}"
 
 
+def _get_with_retry(url: str, params: dict, retries: int = 3) -> list:
+    """GET con reintentos y back-off exponencial."""
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            if attempt == retries:
+                raise
+            wait = 2 ** attempt
+            logger.warning(f"  Intento {attempt}/{retries} fallido: {e} — reintentando en {wait}s")
+            time.sleep(wait)
+    return []
+
+
 def fetch_intraday(pair: str, interval: str, from_dt: datetime, to_dt: datetime) -> pd.DataFrame:
     """Descarga datos intradía desde EODHD."""
     symbol = PAIR_MAP[pair]
@@ -55,9 +71,7 @@ def fetch_intraday(pair: str, interval: str, from_dt: datetime, to_dt: datetime)
         "to":        to_ts,
     }
 
-    resp = requests.get(url, params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    data = _get_with_retry(url, params)
 
     if not data:
         return pd.DataFrame()
@@ -82,9 +96,7 @@ def fetch_daily(pair: str, from_dt: datetime, to_dt: datetime) -> pd.DataFrame:
         "to":        to_dt.strftime("%Y-%m-%d"),
     }
 
-    resp = requests.get(url, params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    data = _get_with_retry(url, params)
 
     if not data:
         return pd.DataFrame()
@@ -167,8 +179,9 @@ def download_historical(years: int = 3):
         # H4 — construido desde H1
         try:
             df_h1 = pd.read_sql(
-                f"SELECT * FROM ohlcv_raw WHERE pair='{pair}' AND timeframe='H1' ORDER BY timestamp",
-                engine
+                text("SELECT * FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'H1' ORDER BY timestamp"),
+                engine,
+                params={"pair": pair},
             )
             if not df_h1.empty:
                 df_h4 = resample_h4(df_h1)
@@ -200,10 +213,14 @@ def get_latest_candles(pair: str, timeframe: str, n: int = 500) -> pd.DataFrame:
     """
     engine = create_engine(DATABASE_URL)
     df = pd.read_sql(
-        f"""SELECT * FROM ohlcv_raw
-            WHERE pair='{pair}' AND timeframe='{timeframe}'
-            ORDER BY timestamp DESC LIMIT {n}""",
-        engine
+        text("""
+            SELECT * FROM ohlcv_raw
+            WHERE pair = :pair AND timeframe = :tf
+            ORDER BY timestamp DESC
+            LIMIT :n
+        """),
+        engine,
+        params={"pair": pair, "tf": timeframe, "n": n},
     )
     return df.sort_values("timestamp").reset_index(drop=True)
 

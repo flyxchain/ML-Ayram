@@ -129,7 +129,7 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── Volumen (forex no tiene volumen real, usamos tick_volume si existe) ──
     vol_series = df.get("volume", pd.Series(np.ones(len(df))))
-    vol_series = vol_series.fillna(1)
+    vol_series = vol_series.fillna(1).infer_objects(copy=False)
     df["volume_sma_20"]   = vol_series.rolling(20).mean()
     df["volume_ratio_20"] = vol_series / df["volume_sma_20"].replace(0, np.nan)
 

@@ -131,12 +131,13 @@ FASE 1 — Servidor
 [X] Repo clonado y requirements.server.txt instalado OK
 
 FASE 2 — Base de Datos
-[ ] PostgreSQL accesible
-[ ] Schema ejecutado
+[X] PostgreSQL accesible (Supabase, IPv6 habilitado en Droplet)
+[X] Schema ejecutado (sin TimescaleDB, PostgreSQL puro)
 
 FASE 3 — cTrader
-[ ] Credenciales API obtenidas
-[ ] Test de conexión OK
+[X] Credenciales API obtenidas
+[ ] Test de conexión OK (cuenta real, solo lectura)
+[ ] Modo ejecución: SIMULADO (paper trading local sin broker demo)
 
 FASE 4 — Dataset
 [ ] Datos históricos descargados

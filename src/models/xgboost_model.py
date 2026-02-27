@@ -71,9 +71,13 @@ def load_dataset(pair: str, timeframe: str) -> tuple[pd.DataFrame, pd.Series]:
     if df.empty:
         raise ValueError(f"Sin datos etiquetados para {pair} {timeframe}")
 
-    # Filtrar features disponibles
+    # Filtrar features disponibles, descartar columnas 100% NaN
     available = [c for c in FEATURE_COLS if c in df.columns]
     X = df[available].copy()
+    all_nan = X.columns[X.isna().all()].tolist()
+    if all_nan:
+        logger.warning(f"Columnas 100% NaN eliminadas: {all_nan}")
+        X = X.drop(columns=all_nan)
     y = df[LABEL_COL].map(LABEL_MAP)
 
     # Imputar NaN con mediana
@@ -175,7 +179,7 @@ def optimize_hyperparams(
             "reg_lambda":       trial.suggest_float("reg_lambda", 0.5, 3.0),
             "eval_metric":      "mlogloss",
             "random_state":     42,
-            "n_jobs":           -1,
+            "n_jobs":           1,   # 1 por trial; Optuna paraleliza a nivel de trial
         }
         tscv = TimeSeriesSplit(n_splits=3)
         f1s  = []

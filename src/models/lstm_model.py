@@ -6,7 +6,6 @@ Clasifica: +1 (long ganador), 0 (neutral), -1 (long perdedor)
 """
 
 import os
-import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -183,8 +182,8 @@ def train_lstm(
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=False)
     val_dl   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False)
 
-    # Peso de clases para desbalanceo
-    class_counts = np.bincount(y_train)
+    # Peso de clases para desbalanceo (minlength=3 garantiza shape correcta aunque falte alguna clase)
+    class_counts  = np.bincount(y_train, minlength=3)
     class_weights = torch.FloatTensor(1.0 / (class_counts + 1)).to(DEVICE)
 
     model     = ForexLSTM(len(feature_cols), hidden_size, num_layers, dropout).to(DEVICE)
@@ -192,7 +191,7 @@ def train_lstm(
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
 
-    best_f1      = 0.0
+    best_f1      = -1.0
     best_state   = None
     no_improve   = 0
     history      = []
@@ -312,15 +311,24 @@ def load_model(pair: str, timeframe: str) -> tuple:
     return model, scaler, feature_cols
 
 
+def _build_windows(X: np.ndarray, seq_len: int) -> torch.Tensor:
+    """Construye todas las ventanas deslizantes de una vez (vectorizado)."""
+    n = len(X) - seq_len
+    windows = np.lib.stride_tricks.sliding_window_view(X, (seq_len, X.shape[1]))
+    # sliding_window_view devuelve (n, 1, seq_len, n_features) → squeeze
+    return torch.FloatTensor(windows[:, 0, :, :])
+
+
 def predict(
     model:        ForexLSTM,
     scaler:       StandardScaler,
     feature_cols: list,
     df:           pd.DataFrame,
     seq_len:      int = SEQUENCE_LEN,
+    batch_size:   int = 256,
 ) -> np.ndarray:
     """
-    Genera predicciones para un DataFrame.
+    Genera predicciones para un DataFrame (vectorizado, sin bucle vela a vela).
     Devuelve array con valores -1, 0, +1.
     Requiere al menos seq_len filas.
     """
@@ -328,18 +336,18 @@ def predict(
     X = df[available].fillna(df[available].median()).values.astype(np.float32)
     X = scaler.transform(X)
 
-    preds = []
+    windows = _build_windows(X, seq_len)  # (N-seq_len, seq_len, n_features)
+    preds   = []
     model.eval()
     with torch.no_grad():
-        for i in range(seq_len, len(X)):
-            seq    = torch.FloatTensor(X[i - seq_len:i]).unsqueeze(0).to(DEVICE)
-            logits = model(seq)
-            pred   = logits.argmax(dim=1).item()
-            preds.append(LABEL_MAP_INV[pred])
+        for start in range(0, len(windows), batch_size):
+            batch  = windows[start:start + batch_size].to(DEVICE)
+            logits = model(batch)
+            preds.extend(logits.argmax(dim=1).cpu().numpy())
 
-    # Las primeras seq_len filas no tienen predicción
+    raw    = np.vectorize(LABEL_MAP_INV.get)(np.array(preds))
     result = np.full(len(df), np.nan)
-    result[seq_len:] = preds
+    result[seq_len:] = raw
     return result
 
 
@@ -349,25 +357,30 @@ def predict_proba(
     feature_cols: list,
     df:           pd.DataFrame,
     seq_len:      int = SEQUENCE_LEN,
+    batch_size:   int = 256,
 ) -> pd.DataFrame:
     """
-    Devuelve probabilidades por clase.
+    Devuelve probabilidades por clase (vectorizado, sin bucle vela a vela).
     Columnas: prob_short, prob_neutral, prob_long
     """
     available = [c for c in feature_cols if c in df.columns]
     X = df[available].fillna(df[available].median()).values.astype(np.float32)
     X = scaler.transform(X)
 
-    probas = []
+    windows = _build_windows(X, seq_len)  # (N-seq_len, seq_len, n_features)
+    probas  = []
     model.eval()
     with torch.no_grad():
-        for i in range(seq_len, len(X)):
-            seq    = torch.FloatTensor(X[i - seq_len:i]).unsqueeze(0).to(DEVICE)
-            logits = model(seq)
-            proba  = torch.softmax(logits, dim=1).cpu().numpy()[0]
+        for start in range(0, len(windows), batch_size):
+            batch  = windows[start:start + batch_size].to(DEVICE)
+            logits = model(batch)
+            proba  = torch.softmax(logits, dim=1).cpu().numpy()
             probas.append(proba)
 
-    result = pd.DataFrame(probas, columns=["prob_short", "prob_neutral", "prob_long"])
+    result = pd.DataFrame(
+        np.vstack(probas),
+        columns=["prob_short", "prob_neutral", "prob_long"]
+    )
     return result
 
 
@@ -383,9 +396,11 @@ def train_and_save(
 
 
 if __name__ == "__main__":
-    pairs = ["EURUSD", "GBPUSD", "USDJPY", "EURJPY", "XAUUSD"]
-    for pair in pairs:
-        try:
-            train_and_save(pair, "H1", epochs=50, patience=10)
-        except Exception as e:
-            logger.error(f"Error {pair}: {e}")
+    pairs      = ["EURUSD", "GBPUSD", "USDJPY", "EURJPY", "XAUUSD"]
+    timeframes = ["M15", "H1", "H4"]
+    for tf in timeframes:
+        for pair in pairs:
+            try:
+                train_and_save(pair, tf, epochs=50, patience=10)
+            except Exception as e:
+                logger.error(f"Error {pair} {tf}: {e}")

@@ -1,0 +1,23 @@
+[Unit]
+Description=ML-Ayram Collector — descarga velas EODHD
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ayram
+Group=ayram
+WorkingDirectory=/home/ayram/ml-ayram
+
+EnvironmentFile=/home/ayram/ml-ayram/.env
+
+# Descarga incremental: solo las velas nuevas desde la última guardada
+ExecStart=/home/ayram/ml-ayram/venv/bin/python3 \
+    -m src.data.collector
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ayram-collector
+
+NoNewPrivileges=true
+PrivateTmp=true

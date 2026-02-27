@@ -1,0 +1,27 @@
+[Unit]
+Description=ML-Ayram Features + Labels — recalcular features e etiquetas
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ayram
+Group=ayram
+WorkingDirectory=/home/ayram/ml-ayram
+
+EnvironmentFile=/home/ayram/ml-ayram/.env
+
+# Primero features, luego labels en secuencia
+ExecStart=/home/ayram/ml-ayram/venv/bin/python3 -m src.data.features
+ExecStart=/home/ayram/ml-ayram/venv/bin/python3 -m src.data.labels
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ayram-features
+
+# Tiempo máximo: features H1 tarda ~8 min por par × 5 pares = 40 min
+# Labels es más rápido. 2 horas debería ser suficiente holgura.
+TimeoutStartSec=7200
+
+NoNewPrivileges=true
+PrivateTmp=true

@@ -225,6 +225,71 @@ def get_latest_candles(pair: str, timeframe: str, n: int = 500) -> pd.DataFrame:
     return df.sort_values("timestamp").reset_index(drop=True)
 
 
+def download_incremental():
+    """
+    Descarga solo las velas nuevas desde el último timestamp guardado en la BD.
+    Llamado por el timer systemd cada 15 minutos.
+    """
+    engine = create_engine(DATABASE_URL)
+    to_dt  = datetime.utcnow()
+    total  = 0
+
+    for pair in PAIR_MAP:
+        for tf, interval in [("M15", "15m"), ("H1", "1h")]:
+            # Buscar el último timestamp guardado para este par/tf
+            with engine.connect() as conn:
+                row = conn.execute(
+                    text("SELECT MAX(timestamp) FROM ohlcv_raw WHERE pair = :pair AND timeframe = :tf"),
+                    {"pair": pair, "tf": tf},
+                ).fetchone()
+
+            last_ts = row[0] if row and row[0] else None
+            if last_ts is None:
+                # Sin datos → descarga histórica completa
+                logger.info(f"{pair} {tf}: sin datos previos, descargando histórico...")
+                from_dt = to_dt - timedelta(days=365 * 3)
+            else:
+                from_dt = pd.Timestamp(last_ts).to_pydatetime()
+                if (to_dt - from_dt).total_seconds() < 60:
+                    continue   # ya tenemos datos frescos
+
+            try:
+                df = fetch_intraday(pair, interval, from_dt, to_dt)
+                df["timeframe"] = tf
+                saved = save_to_db(df, engine)
+                total += saved
+                if saved:
+                    logger.info(f"  {pair} {tf}: +{saved} velas nuevas")
+            except Exception as e:
+                logger.error(f"  Error {pair} {tf}: {e}")
+            time.sleep(0.3)
+
+        # Reconstruir H4 solo si hay datos nuevos de H1
+        try:
+            df_h1 = pd.read_sql(
+                text("SELECT * FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'H1' ORDER BY timestamp"),
+                engine,
+                params={"pair": pair},
+            )
+            if not df_h1.empty:
+                df_h4  = resample_h4(df_h1)
+                saved  = save_to_db(df_h4, engine)
+                total += saved
+        except Exception as e:
+            logger.error(f"  Error H4 {pair}: {e}")
+
+    if total:
+        logger.success(f"✅ Incremental: {total} velas nuevas")
+    else:
+        logger.debug("Incremental: sin datos nuevos")
+    return total
+
+
 if __name__ == "__main__":
-    logger.info("Iniciando descarga histórica completa...")
-    download_historical(years=3)
+    import sys
+    if "--full" in sys.argv:
+        logger.info("Iniciando descarga histórica completa...")
+        download_historical(years=3)
+    else:
+        logger.info("Iniciando descarga incremental...")
+        download_incremental()

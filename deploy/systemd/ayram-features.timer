@@ -1,0 +1,12 @@
+[Unit]
+Description=ML-Ayram Features + Labels — ejecutar cada hora
+Requires=ayram-features.service
+
+[Timer]
+# Ejecutar al inicio de cada hora (minuto 5 para que el collector ya haya corrido)
+OnCalendar=*:05
+AccuracySec=60s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

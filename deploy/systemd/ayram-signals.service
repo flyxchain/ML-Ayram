@@ -1,7 +1,6 @@
 [Unit]
-Description=ML-Ayram Signal Generator (cada 15 minutos)
-Documentation=https://github.com/ayram/ml-ayram
-After=network-online.target postgresql.service
+Description=ML-Ayram Signal Generator (bucle continuo)
+After=network-online.target postgresql.service ayram-dashboard.service
 Wants=network-online.target
 StartLimitIntervalSec=300s
 StartLimitBurst=5
@@ -14,9 +13,9 @@ WorkingDirectory=/home/ayram/ml-ayram
 
 EnvironmentFile=/home/ayram/ml-ayram/.env
 
-ExecStart=/home/ayram/ml-ayram/venv/bin/python3 -m src.signals.generator
+ExecStart=/home/ayram/ml-ayram/venv/bin/python3 \
+    -m src.signals.generator
 
-# El generador de señales es un bucle continuo; si muere, reiniciar
 Restart=on-failure
 RestartSec=30s
 

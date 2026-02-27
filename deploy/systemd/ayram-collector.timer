@@ -1,0 +1,13 @@
+[Unit]
+Description=ML-Ayram Collector — ejecutar cada 15 minutos
+Requires=ayram-collector.service
+
+[Timer]
+# Ejecutar a los :00, :15, :30, :45 de cada hora
+OnCalendar=*:0/15
+# Esperar hasta 60s si el sistema estaba suspendido
+AccuracySec=60s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

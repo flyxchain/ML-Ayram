@@ -121,7 +121,7 @@ FASE 0 — Preparación local
 [X] Git instalado
 [X] Python 3.14.3 instalado en Windows
 [X] VSCode instalado con extensiones
-[ ] Repositorio GitHub privado creado
+[X] Repositorio GitHub privado creado
 [X] venv local creado y dependencias instaladas (Python 3.14.3 OK) (verificar compatibilidad 3.14)
 
 FASE 1 — Servidor

@@ -17,7 +17,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import f1_score
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from loguru import logger
 

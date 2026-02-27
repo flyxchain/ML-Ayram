@@ -18,7 +18,7 @@ except ImportError:
     MLFLOW_AVAILABLE = False
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import f1_score
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from loguru import logger
 from pathlib import Path

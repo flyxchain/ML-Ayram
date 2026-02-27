@@ -1,10 +1,7 @@
 -- ============================================================
--- ML-Ayram — Schema de Base de Datos PostgreSQL + TimescaleDB
--- Ejecutar en Supabase SQL Editor o psql
+-- ML-Ayram — Schema de Base de Datos PostgreSQL
+-- TimescaleDB eliminado (no disponible en Supabase free)
 -- ============================================================
-
--- Habilitar TimescaleDB (si está disponible en tu instancia)
-CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- ============================================================
 -- TABLA 1: Velas OHLCV históricas y en tiempo real
@@ -23,12 +20,6 @@ CREATE TABLE IF NOT EXISTS ohlcv_raw (
     spread          DOUBLE PRECISION,
     created_at      TIMESTAMPTZ     DEFAULT NOW(),
     PRIMARY KEY (pair, timeframe, timestamp)
-);
-
--- Convertir a hypertable para consultas temporales optimizadas
-SELECT create_hypertable('ohlcv_raw', 'timestamp',
-    chunk_time_interval => INTERVAL '1 month',
-    if_not_exists => TRUE
 );
 
 -- Índices para consultas frecuentes
@@ -79,11 +70,6 @@ CREATE TABLE IF NOT EXISTS features_computed (
     label_return    DOUBLE PRECISION,   -- retorno real alcanzado
     sample_weight   DOUBLE PRECISION,  -- peso para el entrenamiento
     PRIMARY KEY (pair, timeframe, timestamp)
-);
-
-SELECT create_hypertable('features_computed', 'timestamp',
-    chunk_time_interval => INTERVAL '1 month',
-    if_not_exists => TRUE
 );
 
 CREATE INDEX IF NOT EXISTS idx_features_pair_tf ON features_computed (pair, timeframe, timestamp DESC);

@@ -125,9 +125,10 @@ FASE 0 — Preparación local
 [X] venv local creado y dependencias instaladas (Python 3.14.3 OK) (verificar compatibilidad 3.14)
 
 FASE 1 — Servidor
-[ ] Cuenta DO/GCP creada con créditos
-[ ] Servidor creado y accesible por SSH
-[ ] Python 3.11 + venv en el servidor (nota: servidor usa 3.11, no 3.14)
+[X] Cuenta DO/GCP creada con créditos
+[X] Servidor creado y accesible por SSH (206.81.31.156)
+[X] Python 3.12.3 + venv en el servidor
+[X] Repo clonado y requirements.server.txt instalado OK
 
 FASE 2 — Base de Datos
 [ ] PostgreSQL accesible

@@ -6,98 +6,87 @@
 Estoy desarrollando un proyecto llamado **ML-Ayram**, un sistema de trading algorítmico con Machine Learning para Forex.
 
 El proyecto está en: `C:\Users\Usuario\Documents\Webs\ML-Ayram\`
+Repositorio GitHub: https://github.com/flyxchain/ML-Ayram
 
 ## Arquitectura del sistema
 
-- **Python local:** 3.14.3 | **Python servidor (Linux):** 3.11 (más estable para librerías ML)
-- **Datos:** cTrader Open API (Protobuf/TCP) → PostgreSQL + TimescaleDB
-- **ML:** Ensemble XGBoost (clasificador de régimen) + LSTM bidireccional (predictor de dirección)
-- **Framework LSTM:** PyTorch (en lugar de TensorFlow — sin wheel oficial para Python 3.14)
+- **Python local:** 3.14.3 | **Python servidor (Linux):** 3.12.3
+- **Datos:** EODHD API (forex intradía M15/H1/H4/D1) → PostgreSQL (Supabase)
+- **Ejecución:** Modo SIMULADO (paper trading local, sin broker demo)
+- **ML:** Ensemble XGBoost + LSTM (PyTorch) con votación ponderada 55/45
 - **Features:** ~85 features técnicos + temporales + multi-timeframe por vela
-- **Etiquetado:** Triple-Barrier Method (López de Prado)
-- **Señales:** Motor de confluencia multi-TF (M15/H1/H4/D1), umbral confianza >72%
-- **SL/TP:** ATR dinámico (SL=1.5×ATR, TP1=1.5RR, TP2=2.5RR, trailing en TP1)
-- **Notificaciones:** Bot de Telegram (python-telegram-bot)
-- **Ejecución:** Auto-trader vía cTrader Open API
-- **Servidor:** DigitalOcean Droplet o GCP e2-medium
-- **BD:** Supabase free (PostgreSQL) o DO Managed PostgreSQL
-- **Dashboard:** Netlify (HTML estático, lectura de métricas)
+- **Etiquetado:** Triple-Barrier Method (López de Prado), TP=2xATR, SL=1xATR
+- **Señales:** Ensemble con umbral de confianza y acuerdo entre modelos
+- **SL/TP:** ATR dinámico (SL=1×ATR, TP=2×ATR, ratio 1:2)
+- **Notificaciones:** Bot de Telegram
+- **Servidor:** DigitalOcean Droplet 206.81.31.156 (Ubuntu 24.04, $12/mes, 2vCPU/2GB)
+- **BD:** Supabase PostgreSQL 17.6 (West EU, sin TimescaleDB)
+- **Dashboard:** Netlify (HTML estático)
 - **Tracking ML:** MLflow
 - **Pares:** EURUSD, GBPUSD, USDJPY, EURJPY, XAUUSD
-- **Scheduler:** APScheduler (dentro del proceso Python)
+- **Timeframes:** M15, H1, H4, D1 (H4 construido desde H1 por resample)
+- **Scheduler:** APScheduler
 - **Servicio:** systemd en el servidor Linux
 
-## ⚠️ Nota de compatibilidad — Python 3.14.3
+## ⚠️ Decisiones técnicas importantes
 
-Python 3.14 es muy reciente. Impacto en librerías:
-
-| Librería | Estado en Python 3.14 | Solución |
+| Tema | Decisión | Motivo |
 |---|---|---|
-| TensorFlow | ❌ Sin wheel oficial | Usar **PyTorch** para LSTM |
-| PyTorch | ✅ Soportado (wheel disponible) | Usar esto para LSTM |
-| XGBoost | ✅ Soportado | Sin cambios |
-| scikit-learn | ✅ Soportado | Sin cambios |
-| pandas / numpy | ✅ Soportados | Sin cambios |
-| pandas-ta | ❌ Usa numba, sin soporte 3.14 | Sustituida por librería **`ta`** |
-| ctrader-open-api | ⚠️ Por verificar | Probar al instalar |
-
-**Estrategia dual:** Desarrollo local en Python 3.14.3. Servidor de producción en Python 3.11 (estable con todas las librerías ML). El código está escrito para ser compatible con ambas versiones.
+| Fuente de datos | **EODHD API** (no cTrader) | OAuth de cTrader no funcionó; EODHD tiene intradía forex M15/H1/D1 |
+| Ejecución de órdenes | **Simulada** (paper trading) | Sin cuenta demo disponible en España sin coste |
+| cTrader | Solo credenciales guardadas | Se activa cuando haya demo disponible |
+| TensorFlow | ❌ → **PyTorch** | Sin wheel para Python 3.14 |
+| pandas-ta | ❌ → librería **`ta`** | pandas-ta usa numba, sin soporte Python 3.14 |
+| TimescaleDB | ❌ → PostgreSQL estándar | No disponible en Supabase free tier |
+| H4 | Construido desde H1 con resample | EODHD no tiene H4 nativo |
+| mlflow | Solo en servidor | pyarrow requiere cmake+MSVC en Windows |
 
 ## Estructura de carpetas del proyecto
 
 ```
 ML-Ayram/
 ├── docs/
-│   ├── TUTORIAL_COMPLETO.md       ← Tutorial paso a paso completo
-│   ├── PROMPT_CONTINUIDAD.md      ← Este archivo
-│   └── ARCHITECTURE_DIAGRAM.html ← Diagrama visual de la arquitectura
+│   ├── TUTORIAL_COMPLETO.md
+│   └── PROMPT_CONTINUIDAD.md       ← Este archivo
 ├── src/
 │   ├── data/
-│   │   ├── collector.py           ← Descarga datos de cTrader
-│   │   ├── features.py            ← Cálculo de ~85 features
-│   │   └── labeler.py             ← Triple-Barrier labeling
+│   │   ├── collector.py            ← Descarga OHLCV desde EODHD ✅
+│   │   ├── features.py             ← ~85 features técnicos/temporales ✅
+│   │   └── labels.py               ← Triple-Barrier Method ✅
 │   ├── models/
-│   │   ├── regime_classifier.py   ← XGBoost para régimen de mercado
-│   │   ├── lstm_predictor.py      ← LSTM con PyTorch para dirección
-│   │   ├── ensemble.py            ← Combinación de modelos
-│   │   └── trainer.py             ← Pipeline de entrenamiento + walk-forward
-│   ├── signals/
-│   │   ├── engine.py              ← Motor de señales con confluencia multi-TF
-│   │   └── risk_manager.py        ← Gestión de riesgo y tamaño de posición
-│   ├── execution/
-│   │   └── ctrader_client.py      ← Conexión y órdenes en cTrader
-│   ├── notifications/
-│   │   └── telegram_bot.py        ← Bot de Telegram
-│   └── dashboard/
-│       └── index.html             ← Dashboard estático para Netlify
-├── scripts/
-│   ├── test_ctrader_connection.py ← Test de conexión a cTrader
-│   ├── retrain_model.py           ← Forzar reentrenamiento
-│   └── performance_report.py     ← Informe de rendimiento
+│   │   ├── xgboost_model.py        ← XGBoost + Optuna + MLflow ✅
+│   │   ├── lstm_model.py           ← LSTM + Attention (PyTorch) ✅
+│   │   └── ensemble.py             ← Votación ponderada XGB+LSTM ✅
+│   └── trading/
+│       ├── __init__.py             ✅
+│       └── signal_generator.py     ← Señales + gestión riesgo + BD ✅
 ├── config/
-│   ├── schema.sql                 ← Schema de la base de datos
-│   ├── signal_config.yaml         ← Parámetros del motor de señales
-│   └── settings.py                ← Configuración general del proyecto
+│   └── schema.sql                  ← Schema PostgreSQL (sin TimescaleDB) ✅
 ├── models/
-│   └── saved/                     ← Modelos entrenados (.pt, .pkl)
-├── logs/                          ← Logs del bot en producción
-├── tests/                         ← Tests unitarios
-├── main.py                        ← Punto de entrada principal
-├── requirements.txt               ← Dependencias Python
-├── .env.example                   ← Plantilla de variables de entorno
-├── .gitignore                     ← Ignora .env y modelos grandes
-└── README.md                      ← Descripción general del proyecto
+│   └── saved/                      ← Modelos entrenados (.pt, .ubj)
+├── logs/                           ← Logs del bot en producción
+├── requirements.txt                ← Dependencias local (sin mlflow) ✅
+├── requirements.server.txt         ← Dependencias servidor (con mlflow) ✅
+└── .env / .env.example
 ```
 
-## Variables de entorno necesarias (.env)
+**Módulos pendientes de crear:**
+- `src/bot.py` — Scheduler principal (APScheduler)
+- `src/notifications/telegram_bot.py` — Bot Telegram
+- `src/training/train_pipeline.py` — Pipeline entrenamiento completo
+- `main.py` — Punto de entrada
+
+## Variables de entorno (.env en servidor ~/ml-ayram/.env)
 
 ```
-CTRADER_CLIENT_ID=
-CTRADER_CLIENT_SECRET=
-CTRADER_ACCOUNT_ID=
-CTRADER_ENV=demo   # o 'live'
+EODHD_API_KEY=694d385412e069.56149556
 
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
+CTRADER_CLIENT_ID=21838_G2BlJoy7B8vs4AkVWXaWdcojrLIQGyf83GmJ60cmgigH5uUkug
+CTRADER_CLIENT_SECRET=53hsPolaU5L1QlKaY1FROVcLeXcnjReQFIc1iIspnQ7My7jE4O
+CTRADER_ACCOUNT_ID=2016020
+CTRADER_ENV=live
+
+DATABASE_URL=postgresql://postgres:ff6P*Pe*QK_9kaJ@[host_supabase]:5432/postgres
 
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
@@ -105,118 +94,114 @@ TELEGRAM_CHAT_ID=
 MLFLOW_TRACKING_URI=http://localhost:5000
 ```
 
+⚠️ Cambiar contraseña de BD después de este chat.
+
+## Conexión al servidor
+
+```bash
+ssh root@206.81.31.156
+su - ayram
+cd ~/ml-ayram && source venv/bin/activate
+```
+
 ## Estado actual del proyecto
 
-<!-- ACTUALIZA ESTA SECCIÓN EN CADA SESIÓN -->
+**Fecha de última actualización:** Feb 2026
+**Fase actual:** FASE 4 — Dataset (descarga histórica en progreso)
 
-**Fecha de última actualización:** Feb 2026  
-**Fase actual:** FASE 0 — Preparación local (en progreso)  
-**Último paso completado:** Git, Python 3.14.3 y VSCode instalados en Windows  
-**Próximo paso a hacer:** Crear repo GitHub privado + venv local + verificar instalación de dependencias
-
-### Checklist rápido (marca con X lo que está hecho):
+### Checklist
 
 ```
 FASE 0 — Preparación local
-[X] Git instalado
-[X] Python 3.14.3 instalado en Windows
-[X] VSCode instalado con extensiones
-[X] Repositorio GitHub privado creado
-[X] venv local creado y dependencias instaladas (Python 3.14.3 OK) (verificar compatibilidad 3.14)
+[X] Git, Python 3.14.3, VSCode instalados
+[X] venv local creado, dependencias instaladas
+[X] Repositorio GitHub privado creado y primer commit
 
 FASE 1 — Servidor
-[X] Cuenta DO/GCP creada con créditos
-[X] Servidor creado y accesible por SSH (206.81.31.156)
-[X] Python 3.12.3 + venv en el servidor
-[X] Repo clonado y requirements.server.txt instalado OK
+[X] DigitalOcean Droplet (206.81.31.156, Frankfurt, Ubuntu 24.04)
+[X] SSH configurado, usuario ayram creado
+[X] Firewall UFW (SSH + 443)
+[X] Python 3.12.3 + venv + requirements.server.txt instalado
+[X] Repo clonado en ~/ml-ayram
 
 FASE 2 — Base de Datos
-[X] PostgreSQL accesible (Supabase, IPv6 habilitado en Droplet)
-[X] Schema ejecutado (sin TimescaleDB, PostgreSQL puro)
+[X] Supabase PostgreSQL 17.6 (West EU)
+[X] IPv6 habilitado en Droplet (Supabase usa IPv6)
+[X] Schema ejecutado (sin TimescaleDB)
+[X] .env configurado en servidor
 
-FASE 3 — cTrader
-[X] Credenciales API obtenidas
-[ ] Test de conexión OK (cuenta real, solo lectura)
-[ ] Modo ejecución: SIMULADO (paper trading local sin broker demo)
+FASE 3 — Fuente de datos
+[X] EODHD API key verificada (intradía forex OK)
+[X] collector.py creado y probado (200 velas H1 EURUSD OK)
+[ ] Descarga histórica completa (en progreso, PID 3405)
 
 FASE 4 — Dataset
-[ ] Datos históricos descargados
-[ ] Features calculados
-[ ] Labels generados
+[ ] Descarga histórica completada (3 años, 5 pares)
+[ ] features.py ejecutado en servidor
+[ ] labels.py ejecutado en servidor
 
 FASE 5 — Modelo
-[ ] XGBoost entrenado (OOS >58%)
-[ ] LSTM (PyTorch) entrenado
-[ ] Walk-forward validation OK
+[ ] XGBoost entrenado (CV F1 > 0.55)
+[ ] LSTM entrenado
+[ ] Ensemble validado
 
 FASE 6 — Signal Engine
-[ ] Motor configurado y testeado
+[ ] signal_generator.py probado end-to-end
 
 FASE 7 — Telegram
 [ ] Bot creado y recibiendo mensajes
 
 FASE 8 — Paper Trading
-[ ] 4 semanas completadas con métricas OK
+[ ] 4 semanas con métricas OK
 
 FASE 9 — Live Trading
-[ ] Auto-trader en DEMO funcionando
-[ ] Servicio systemd activo
+[ ] Activado (cuando haya cuenta demo disponible)
 
 FASE 10 — Dashboard
 [ ] Desplegado en Netlify
 ```
 
-## Notas técnicas importantes
+## Dependencias principales
 
-- **Python 3.14.3 local / Python 3.11 servidor** — estrategia dual por compatibilidad
-- **PyTorch en lugar de TensorFlow** para la LSTM (TF no tiene wheel para Python 3.14)
-- **Siempre desarrollar en cTrader DEMO** antes de tocar cuenta real
-- El modelo se **reentrena automáticamente** el primer domingo de cada mes con APScheduler
-- El walk-forward validation usa **expanding window** (no rolling) para evitar overfitting
-- El etiquetado **Triple-Barrier** está implementado en `src/data/labeler.py`
-- El bot de Telegram tiene **kill-switch** con el comando `/close_all`
-- Los modelos guardados usan extensión **.pt** (PyTorch) en lugar de .h5 (TensorFlow)
-- Los modelos grandes (.pt, .pkl) están en **.gitignore** — se regeneran
-- **Nunca commitear el archivo .env** con credenciales reales
-- El servidor usa **systemd** para arrancar el bot automáticamente tras reinicios
-- Los logs del bot están en `~/ml-ayram/logs/bot.log` en el servidor
-
-## Dependencias principales (requirements.txt)
-
+**requirements.txt (local — sin mlflow):**
 ```
-# Nota: instaladas en Python 3.14.3 local y Python 3.11 en servidor
-
-ctrader-open-api==0.9.2       # Última versión estable (la librería nunca llegó a 2.x)
 pandas>=2.1.0
-ta>=0.11.0                    # Reemplaza pandas-ta (pandas-ta usa numba, sin soporte Python 3.14)
-numpy>=2.0.0                  # NumPy 2.x compatible con Python 3.14
+ta>=0.11.0
+numpy>=2.0.0
 scikit-learn>=1.4.0
 xgboost>=2.0.0
-torch>=2.2.0                  # PyTorch (en lugar de TensorFlow)
+torch>=2.2.0
 optuna>=3.4.0
-mlflow>=2.9.0
-python-telegram-bot>=21.0.0
 SQLAlchemy>=2.0.0
 psycopg2-binary>=2.9.0
 APScheduler>=3.10.0
 python-dotenv>=1.0.0
-pyyaml>=6.0.1
-scipy>=1.11.0
-joblib>=1.3.0
 loguru>=0.7.0
-rich>=13.0.0
-httpx>=0.26.0
+requests>=2.31.0
+python-telegram-bot>=21.0.0
+# mlflow     ← solo en servidor
 ```
 
+**requirements.server.txt (servidor — con mlflow):**
+```
+(todo lo anterior) + mlflow>=3.2.0
+```
+
+## Notas técnicas
+
+- **Nunca commitear .env** con credenciales
+- **Modelos grandes (.pt, .ubj)** en .gitignore
+- **H4** se construye con `resample_h4()` desde H1 en collector.py
+- **Paper trading:** PnL calculado matemáticamente en signal_generator.py
+- **Switch live:** cuando haya demo, cambiar `CTRADER_ENV=demo` y activar ctrader_client.py
+- **Servidor Python 3.12.3 / Local Python 3.14.3** — código compatible con ambas versiones
+- El servidor tiene soporte CUDA 12.8 (torch instalado con +cu128)
+
 ---
 
-**Cuando empieces un nuevo chat, pega este prompt y añade al final:**
+**Al iniciar un nuevo chat, pega este prompt y añade:**
 
-"Continuamos desde [FASE X — NOMBRE]. El último paso completado fue [DESCRIPCIÓN]. Necesito ayuda con [TAREA ESPECÍFICA]."
-
-**Ejemplo:**
-"Continuamos desde FASE 1 — Servidor. El último paso completado fue la creación del Droplet en DigitalOcean. Necesito ayuda con la configuración inicial del servidor."
+"Continuamos desde [FASE X]. El último paso completado fue [DESCRIPCIÓN]. Necesito ayuda con [TAREA]."
 
 ---
-
 *ML-Ayram | Proyecto de uso personal | No compartir públicamente*

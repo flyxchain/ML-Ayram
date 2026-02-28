@@ -1,0 +1,35 @@
+[Unit]
+Description=ML-Ayram Walk-Forward Validation + Model Health Check
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ayram
+Group=ayram
+WorkingDirectory=/home/ayram/ml-ayram
+
+EnvironmentFile=/home/ayram/ml-ayram/.env
+
+# 1. Walk-Forward con 8 folds, 6m IS, 1m OOS, ventana expansiva
+ExecStart=/home/ayram/ml-ayram/venv/bin/python3 \
+    -m src.backtest.walk_forward \
+    --folds 8 --is-months 6 --oos-months 1 --expanding
+
+# 2. Chequeo de salud del modelo
+ExecStart=/home/ayram/ml-ayram/venv/bin/python3 \
+    -m src.monitoring.model_health
+
+# 3. Generar resumen mensual para análisis IA
+ExecStart=/home/ayram/ml-ayram/venv/bin/python3 \
+    -m src.analysis.monthly_summary
+
+# Timeout: walk-forward puede tardar 2-3 horas
+TimeoutStartSec=14400
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ayram-walkforward
+
+NoNewPrivileges=true
+PrivateTmp=true

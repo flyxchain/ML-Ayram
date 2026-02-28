@@ -1,0 +1,12 @@
+[Unit]
+Description=ML-Ayram Anomaly Detection — cada 6 horas
+Requires=ayram-anomaly.service
+
+[Timer]
+# Cada 6 horas (00:30, 06:30, 12:30, 18:30)
+OnCalendar=*-*-* 00/6:30:00
+AccuracySec=120s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

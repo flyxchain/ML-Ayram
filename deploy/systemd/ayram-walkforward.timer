@@ -1,0 +1,13 @@
+[Unit]
+Description=ML-Ayram Walk-Forward Validation — mensual primer domingo 04:00 UTC
+Requires=ayram-walkforward.service
+
+[Timer]
+# Primer domingo de cada mes a las 04:00 UTC
+# (días 01-07 que caigan en domingo)
+OnCalendar=Sun *-*-01..07 04:00:00
+AccuracySec=120s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

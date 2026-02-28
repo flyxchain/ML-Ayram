@@ -33,7 +33,10 @@ fi
 echo "→ Copiando unit files..."
 for f in ayram-dashboard.service ayram-signals.service \
          ayram-collector.service ayram-collector.timer \
-         ayram-features.service  ayram-features.timer; do
+         ayram-features.service  ayram-features.timer \
+         ayram-train.service     ayram-train.timer \
+         ayram-walkforward.service ayram-walkforward.timer \
+         ayram-anomaly.service    ayram-anomaly.timer; do
     cp "$SCRIPT_DIR/$f" "$SYSTEMD_DIR/"
     chmod 644 "$SYSTEMD_DIR/$f"
 done
@@ -48,6 +51,9 @@ systemctl enable ayram-dashboard.service
 systemctl enable ayram-signals.service
 systemctl enable ayram-collector.timer
 systemctl enable ayram-features.timer
+systemctl enable ayram-train.timer
+systemctl enable ayram-walkforward.timer
+systemctl enable ayram-anomaly.timer
 
 # 7. Detener los procesos nohup actuales si existen
 echo "→ Deteniendo procesos nohup existentes (si los hay)..."
@@ -61,12 +67,17 @@ sleep 3
 systemctl start ayram-signals.service
 systemctl start ayram-collector.timer
 systemctl start ayram-features.timer
+systemctl start ayram-train.timer
+systemctl start ayram-walkforward.timer
+systemctl start ayram-anomaly.timer
 
 # 9. Estado final
 echo ""
 echo "=== Estado ==="
 for unit in ayram-dashboard.service ayram-signals.service \
-            ayram-collector.timer ayram-features.timer; do
+            ayram-collector.timer ayram-features.timer \
+            ayram-train.timer ayram-walkforward.timer \
+            ayram-anomaly.timer; do
     printf "%-35s " "$unit:"
     systemctl is-active "$unit" 2>/dev/null || echo "inactive"
 done
@@ -82,3 +93,7 @@ echo "  journalctl -u ayram-features -f      # logs último features"
 echo "  systemctl list-timers                # ver próximas ejecuciones"
 echo "  systemctl restart ayram-dashboard    # reiniciar dashboard"
 echo "  systemctl stop ayram-signals         # parar señales"
+echo "  journalctl -u ayram-train -f          # logs último entrenamiento"
+echo "  journalctl -u ayram-walkforward -f    # logs walk-forward"
+echo "  systemctl start ayram-train.service   # forzar entrenamiento ahora"
+echo "  systemctl list-timers ayram-*         # ver próximas ejecuciones"

@@ -1,0 +1,12 @@
+[Unit]
+Description=ML-Ayram Model Retraining — semanal domingos 02:00 UTC
+Requires=ayram-train.service
+
+[Timer]
+# Cada domingo a las 02:00 UTC (mercado cerrado)
+OnCalendar=Sun *-*-* 02:00:00
+AccuracySec=120s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

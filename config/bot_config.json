@@ -1,0 +1,12 @@
+{
+    "active_pairs": ["EURUSD", "GBPUSD", "USDJPY", "EURJPY", "XAUUSD"],
+    "active_timeframes": ["M15", "H1", "H4"],
+    "risk_per_trade_pct": 1.0,
+    "max_lot_size": 0.10,
+    "max_simultaneous_positions": 3,
+    "max_daily_loss_eur": 50.0,
+    "weekend_pause": true,
+    "training_day": "sunday",
+    "training_hour_utc": 2,
+    "notes": ""
+}

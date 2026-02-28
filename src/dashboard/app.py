@@ -30,7 +30,7 @@ import glob
 import subprocess
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 import numpy as np
 import pandas as pd
@@ -41,6 +41,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from loguru import logger
+
+from src.utils.pipeline_logger import (
+    ensure_table as ensure_pipeline_table,
+    is_forex_market_open,
+)
 
 
 class NaNSafeEncoder(json.JSONEncoder):
@@ -86,6 +91,48 @@ class FilterConfig(BaseModel):
 
 
 _current_config = FilterConfig()
+
+
+class BotConfig(BaseModel):
+    active_pairs:               List[str] = ["EURUSD","GBPUSD","USDJPY","EURJPY","XAUUSD"]
+    active_timeframes:          List[str] = ["M15","H1","H4"]
+    risk_per_trade_pct:         float = 1.0
+    max_lot_size:               float = 0.10
+    max_simultaneous_positions: int   = 3
+    max_daily_loss_eur:         float = 50.0
+    weekend_pause:              bool  = True
+    training_day:               str   = "sunday"
+    training_hour_utc:          int   = 2
+    notes:                      str   = ""
+
+
+BOT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "bot_config.json"
+
+
+def _load_bot_config() -> BotConfig:
+    if BOT_CONFIG_PATH.exists():
+        try:
+            with open(BOT_CONFIG_PATH, "r", encoding="utf-8") as f:
+                return BotConfig(**json.load(f))
+        except Exception as e:
+            logger.warning(f"Error leyendo bot_config.json: {e}")
+    return BotConfig()
+
+
+def _save_bot_config(cfg: BotConfig):
+    BOT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(BOT_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg.dict(), f, indent=4, ensure_ascii=False)
+    logger.info(f"Bot config guardado en {BOT_CONFIG_PATH}")
+
+
+# ── Constantes de precisión FOREX ──────────────────────────────────────────────────
+
+PAIR_PRECISION = {
+    "EURUSD": 5, "GBPUSD": 5,   # Pares mayores: 5 decimales (pip = 0.0001)
+    "USDJPY": 3, "EURJPY": 3,   # Pares JPY: 3 decimales (pip = 0.01)
+    "XAUUSD": 2,                 # Oro: 2 decimales
+}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -276,9 +323,13 @@ def get_chart_data(
                 pd.to_datetime(signals["timestamp"]).astype("int64") // 10**9
             )
 
+        # Precisión decimal según par
+        precision = PAIR_PRECISION.get(pair, 5)
+
         return _safe_json({
             "pair":      pair,
             "timeframe": timeframe,
+            "precision": precision,
             "candles":   df[["timestamp","open","high","low","close","volume"]].to_dict(orient="records"),
             "signals":   signals.to_dict(orient="records") if not signals.empty else [],
         })
@@ -647,6 +698,83 @@ def get_monthly_summary():
         raise HTTPException(500, str(e))
 
 
+# ── /api/pipeline — Estado del pipeline (barras de progreso) ──────────────────
+
+@app.get("/api/pipeline")
+def get_pipeline(hours: int = Query(24, le=168)):
+    """Devuelve historial de ejecuciones del pipeline para visualización."""
+    try:
+        if not _table_exists("pipeline_runs"):
+            ensure_pipeline_table()
+            return _safe_json({"server_time": datetime.now(timezone.utc).isoformat(),
+                               "market_open": is_forex_market_open(),
+                               "runs": [], "errors": [], "stats": {}})
+
+        runs_df = _query(
+            f"SELECT id, task, started_at, finished_at, status, error_message, "
+            f"       rows_processed, duration_seconds "
+            f"FROM pipeline_runs "
+            f"WHERE started_at >= NOW() - INTERVAL '{int(hours)} hours' "
+            f"ORDER BY started_at DESC LIMIT 1000"
+        )
+
+        errors_df = _query(
+            "SELECT id, task, started_at, error_message, duration_seconds "
+            "FROM pipeline_runs WHERE status = 'error' "
+            "ORDER BY started_at DESC LIMIT 50"
+        )
+
+        runs = []
+        if not runs_df.empty:
+            runs_df["started_at"]  = runs_df["started_at"].astype(str)
+            runs_df["finished_at"] = runs_df["finished_at"].astype(str)
+            runs = runs_df.to_dict(orient="records")
+
+        errors = []
+        if not errors_df.empty:
+            errors_df["started_at"] = errors_df["started_at"].astype(str)
+            errors = errors_df.to_dict(orient="records")
+
+        # Stats por tarea
+        stats = {}
+        if not runs_df.empty:
+            for task, grp in runs_df.groupby("task"):
+                total    = len(grp)
+                ok       = int((grp["status"] == "success").sum())
+                err      = int((grp["status"] == "error").sum())
+                skipped  = int((grp["status"] == "skipped").sum())
+                avg_dur  = float(grp["duration_seconds"].dropna().mean()) if not grp["duration_seconds"].dropna().empty else 0
+                stats[task] = {
+                    "total": total, "success": ok, "errors": err,
+                    "skipped": skipped, "avg_duration": round(avg_dur, 1),
+                }
+
+        return _safe_json({
+            "server_time": datetime.now(timezone.utc).isoformat(),
+            "market_open": is_forex_market_open(),
+            "period_hours": hours,
+            "runs":   runs,
+            "errors": errors,
+            "stats":  stats,
+        })
+    except Exception as e:
+        logger.error(f"/api/pipeline error: {e}")
+        raise HTTPException(500, str(e))
+
+
+# ── /api/bot — Configuración del bot ──────────────────────────────────────────
+
+@app.get("/api/bot")
+def get_bot_config():
+    return _load_bot_config().dict()
+
+
+@app.post("/api/bot")
+def update_bot_config(cfg: BotConfig):
+    _save_bot_config(cfg)
+    return {"ok": True, "config": cfg.dict()}
+
+
 # ── /api/services — Estado de servicios systemd ──────────────────────────────
 
 @app.get("/api/services")
@@ -657,6 +785,7 @@ def get_services_status():
         {"name": "ayram-signals",      "type": "service", "desc": "Generador de señales (continuo)"},
         {"name": "ayram-collector",    "type": "timer",   "desc": "Descarga velas EODHD (cada 15min)"},
         {"name": "ayram-features",     "type": "timer",   "desc": "Recálculo features (cada 3h)"},
+        {"name": "ayram-positions",    "type": "timer",   "desc": "Gestión posiciones (cada 5min)"},
         {"name": "ayram-anomaly",      "type": "timer",   "desc": "Detección anomalías (cada 6h)"},
         {"name": "ayram-train",        "type": "timer",   "desc": "Reentrenamiento semanal (dom 02:00)"},
         {"name": "ayram-walkforward",  "type": "timer",   "desc": "Walk-forward mensual (1er dom 04:00)"},
@@ -730,6 +859,83 @@ def get_services_status():
         "server_time": datetime.now(timezone.utc).isoformat(),
         "services":    results,
     })
+
+
+# ── /api/correlations ─────────────────────────────────────────────────────────
+
+@app.get("/api/correlations")
+def get_correlations(
+    timeframe: str = Query("H1"),
+    days: int = Query(90, le=365),
+):
+    """
+    Matriz de correlaciones entre pares basada en retornos logarítmicos.
+    Incluye correlaciones rolling de 20 periodos para ver tendencia reciente.
+    """
+    try:
+        from_ts = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        df = _query(
+            "SELECT pair, timestamp, close FROM ohlcv_raw "
+            "WHERE timeframe = :tf AND timestamp >= :from_ts "
+            "ORDER BY timestamp",
+            {"tf": timeframe, "from_ts": from_ts},
+        )
+        if df.empty:
+            return {"error": "Sin datos suficientes"}
+
+        pivot = df.pivot_table(index="timestamp", columns="pair", values="close")
+        pivot = pivot.dropna()
+
+        if len(pivot) < 30:
+            return {"error": "Datos insuficientes para calcular correlaciones"}
+
+        # Retornos logarítmicos
+        log_returns = np.log(pivot / pivot.shift(1)).dropna()
+
+        # Matriz de correlación completa
+        corr = log_returns.corr().round(4)
+        pairs_list = list(corr.columns)
+        matrix = {}
+        for p in pairs_list:
+            matrix[p] = {p2: float(corr.loc[p, p2]) for p2 in pairs_list}
+
+        # Correlaciones rolling recientes (últimos 20 periodos)
+        rolling_window = min(20, len(log_returns) - 1)
+        recent_corr = log_returns.tail(rolling_window).corr().round(4)
+        recent_matrix = {}
+        for p in pairs_list:
+            recent_matrix[p] = {p2: float(recent_corr.loc[p, p2]) for p2 in pairs_list}
+
+        # Top correlaciones (positivas y negativas, excluyendo autocorrelación)
+        top_pairs = []
+        seen = set()
+        for i, p1 in enumerate(pairs_list):
+            for p2 in pairs_list[i+1:]:
+                key = tuple(sorted([p1, p2]))
+                if key not in seen:
+                    seen.add(key)
+                    val = float(corr.loc[p1, p2])
+                    recent_val = float(recent_corr.loc[p1, p2])
+                    top_pairs.append({
+                        "pair1": p1, "pair2": p2,
+                        "correlation": val,
+                        "recent": recent_val,
+                        "change": round(recent_val - val, 4),
+                    })
+        top_pairs.sort(key=lambda x: abs(x["correlation"]), reverse=True)
+
+        return _safe_json({
+            "timeframe":     timeframe,
+            "period_days":   days,
+            "data_points":   len(log_returns),
+            "pairs":         pairs_list,
+            "matrix":        matrix,
+            "recent_matrix": recent_matrix,
+            "top_correlations": top_pairs,
+        })
+    except Exception as e:
+        logger.error(f"/api/correlations error: {e}")
+        raise HTTPException(500, str(e))
 
 
 # ── /api/config ───────────────────────────────────────────────────────────────

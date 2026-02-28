@@ -21,21 +21,37 @@ Repositorio GitHub: https://github.com/flyxchain/ML-Ayram
 - **Notificaciones:** Bot de Telegram
 - **Servidor:** DigitalOcean Droplet 206.81.31.156 (Ubuntu 24.04, $12/mes, 2vCPU/2GB)
 - **BD:** Supabase PostgreSQL 17.6 (West EU, sin TimescaleDB)
-- **Dashboard:** FastAPI + Uvicorn (servido desde el servidor, puerto 8000)
+- **Dashboard:** FastAPI + Uvicorn (puerto 8000) — SPA con gráficos, monitor, rendimiento
+- **Monitoreo:** model_health.py + anomaly_detector.py (detección degradación continua)
+- **Análisis IA:** monthly_summary.py (genera prompts con métricas para análisis con Claude/ChatGPT)
 - **Tracking ML:** MLflow
 - **Pares:** EURUSD, GBPUSD, USDJPY, EURJPY, XAUUSD
 - **Timeframes:** M15, H1, H4, D1 (H4 construido desde H1 por resample)
-- **Scheduler:** APScheduler / systemd timers
-- **Servicios:** systemd en el servidor Linux (ayram-dashboard, ayram-signals, ayram-collector, ayram-features)
+- **Scheduler:** systemd timers (collector, features, train, walkforward, anomaly)
+- **Servicios daemon:** systemd (ayram-dashboard, ayram-signals) — Restart=always
 - **Deploy:** Script rsync + systemd (deploy/deploy.sh)
 - **Backtesting:** Motor propio + Walk-Forward Validation
 - **Configuración:** signal_config.yaml centralizado
+
+## Orquestación completa de servicios
+
+```
+Cada 15 min    → ayram-collector.timer   (descarga velas EODHD)
+Cada 15 min    → ayram-signals.service   (genera señales, bucle continuo, daemon)
+Cada 3 horas   → ayram-features.timer    (recalcula features + labels)
+Cada 6 horas   → ayram-anomaly.timer     (6 checks operativos)
+Cada domingo   → ayram-train.timer       (reentrenamiento Optuna, 02:00 UTC)
+1er dom/mes    → ayram-walkforward.timer (WF + health + resumen IA, 04:00 UTC)
+Siempre activo → ayram-dashboard.service (FastAPI en :8000, daemon)
+```
+
+Todos los servicios se reinician automáticamente si el servidor se reinicia (systemd enable + Restart=always para daemons).
 
 ## ⚠️ Decisiones técnicas importantes
 
 | Tema | Decisión | Motivo |
 |---|---|---|
-| Fuente de datos | **EODHD API** (no cTrader) | OAuth de cTrader no funcionó; EODHD tiene intradía forex M15/H1/D1 |
+| Fuente de datos | **EODHD API** (no cTrader) | OAuth de cTrader no funcionó; EODHD tiene intradía forex |
 | Ejecución de órdenes | **Simulada** (paper trading) | Sin cuenta demo disponible en España sin coste |
 | cTrader | Solo credenciales guardadas | Se activa cuando haya demo disponible |
 | TensorFlow | ❌ → **PyTorch** | Sin wheel para Python 3.14 |
@@ -43,40 +59,52 @@ Repositorio GitHub: https://github.com/flyxchain/ML-Ayram
 | TimescaleDB | ❌ → PostgreSQL estándar | No disponible en Supabase free tier |
 | H4 | Construido desde H1 con resample | EODHD no tiene H4 nativo |
 | mlflow | Solo en servidor | pyarrow requiere cmake+MSVC en Windows |
-| Dashboard | **FastAPI** (no Netlify estático) | Backend necesario para API de métricas y configuración dinámica |
+| Dashboard | **FastAPI** (no Netlify estático) | Backend necesario para API de métricas |
 | Backtesting | Motor propio + Walk-Forward | Validación OOS sin lookahead bias |
+| Monitoreo | model_health + anomaly_detector | Degradación de modelos detectada automáticamente |
+| Análisis IA | monthly_summary genera prompts | Análisis mensual asistido por Claude/ChatGPT |
 
 ## Estructura de carpetas del proyecto
 
 ```
 ML-Ayram/
 ├── config/
-│   ├── schema.sql                  ← Schema PostgreSQL (sin TimescaleDB) ✅
-│   └── signal_config.yaml          ← Configuración centralizada de señales/riesgo/modelos ✅
+│   ├── schema.sql                  ← Schema PostgreSQL ✅
+│   └── signal_config.yaml          ← Configuración centralizada ✅
 ├── deploy/
 │   ├── deploy.sh                   ← Script de deploy rsync + reinicio servicios ✅
 │   └── systemd/
 │       ├── ayram-collector.service  ✅
 │       ├── ayram-collector.timer    ✅
-│       ├── ayram-dashboard.service  ✅
+│       ├── ayram-dashboard.service  ✅  (daemon, Restart=always)
 │       ├── ayram-features.service   ✅
 │       ├── ayram-features.timer     ✅
-│       ├── ayram-signals.service    ✅
+│       ├── ayram-signals.service    ✅  (daemon, Restart=always)
+│       ├── ayram-train.service      ✅  (reentrenamiento semanal)
+│       ├── ayram-train.timer        ✅  (domingos 02:00 UTC)
+│       ├── ayram-walkforward.service ✅ (WF + health + IA mensual)
+│       ├── ayram-walkforward.timer  ✅  (1er domingo/mes 04:00 UTC)
+│       ├── ayram-anomaly.service    ✅  (6 checks operativos)
+│       ├── ayram-anomaly.timer      ✅  (cada 6 horas)
 │       ├── install.sh               ✅
 │       └── README.md                ✅
 ├── docs/
 │   ├── PROMPT_CONTINUIDAD.md       ← Este archivo
-│   └── TUTORIAL_COMPLETO.md        ← Tutorial paso a paso
+│   ├── TUTORIAL_COMPLETO.md        ← Tutorial paso a paso
+│   └── COMO_FUNCIONA.md            ← Explicación detallada del sistema
 ├── logs/                            ← Logs del bot en producción
 ├── models/
 │   └── saved/                       ← Modelos entrenados (.pt, .ubj)
-├── results/                         ← Resultados de backtests y walk-forward
+├── results/                         ← Resultados de backtests, health, anomalías, IA
 ├── scripts/
 │   ├── init_db.py                   ← Inicialización de la BD ✅
 │   └── test_ctrader_connection.py   ← Test de conexión cTrader ✅
 ├── src/
 │   ├── __init__.py                  ✅
 │   ├── train.py                     ← Orquestador entrenamiento XGB+LSTM ✅
+│   ├── analysis/                    ← MÓDULO ANÁLISIS IA
+│   │   ├── __init__.py              ✅
+│   │   └── monthly_summary.py       ← Resumen mensual + prompt para Claude/ChatGPT ✅
 │   ├── backtest/
 │   │   ├── __init__.py              ✅
 │   │   ├── engine.py                ← Backtesting sobre señales históricas ✅
@@ -99,18 +127,22 @@ ML-Ayram/
 │   │   ├── xgboost_model.py         ← XGBoost + Optuna + MLflow ✅
 │   │   ├── lstm_model.py            ← LSTM + Attention (PyTorch) ✅
 │   │   └── ensemble.py              ← Votación ponderada XGB+LSTM ✅
+│   ├── monitoring/                  ← MÓDULO MONITOREO
+│   │   ├── __init__.py              ✅
+│   │   ├── model_health.py          ← Diagnóstico degradación modelos ✅
+│   │   └── anomaly_detector.py      ← 6 checks operativos cada 6h ✅
 │   ├── notifications/
 │   │   ├── __init__.py              ✅
-│   │   └── telegram.py              ← Bot Telegram (señales/errores/heartbeat) ✅
+│   │   └── telegram.py              ← Bot Telegram ✅
 │   ├── signals/
 │   │   ├── __init__.py              ✅
 │   │   └── generator.py             ← Generador de señales con filtros ✅
 │   └── trading/
 │       ├── __init__.py              ✅
-│       └── signal_generator.py      ← Señales + gestión riesgo + BD (legacy) ✅
+│       └── signal_generator.py      ← Señales + gestión riesgo (legacy) ✅
 ├── main.py                          ← Punto de entrada principal ✅
-├── requirements.txt                 ← Dependencias local (sin mlflow) ✅
-├── requirements.server.txt          ← Dependencias servidor (con mlflow) ✅
+├── requirements.txt                 ← Dependencias local ✅
+├── requirements.server.txt          ← Dependencias servidor ✅
 ├── .env / .env.example              ✅
 ├── .gitignore                       ✅
 └── README.md                        ✅
@@ -119,41 +151,20 @@ ML-Ayram/
 ## Variables de entorno (.env en servidor ~/ml-ayram/.env)
 
 ```
-# ── cTrader Open API ─────────────────────────────────────
-CTRADER_CLIENT_ID=21838_G2BlJoy7B8vs4AkVWXaWdcojrLIQGyf83GmJ60cmgigH5uUkug
-CTRADER_CLIENT_SECRET=53hsPolaU5L1QlKaY1FROVcLeXcnjReQFIc1iIspnQ7My7jE4O
-CTRADER_ACCOUNT_ID=2016020
-CTRADER_ENV=live
-CTRADER_HOST_DEMO=demo.ctraderapi.com
-CTRADER_HOST_LIVE=live.ctraderapi.com
-CTRADER_PORT=5035
-
-# ── EODHD ────────────────────────────────────────────────
 EODHD_API_KEY=694d385412e069.56149556
-
-# ── Base de datos ────────────────────────────────────────
 DATABASE_URL=postgresql://postgres:ff6P*Pe*QK_9kaJ@[host_supabase]:5432/postgres
 DATABASE_POOL_SIZE=5
 DATABASE_MAX_OVERFLOW=10
-
-# ── Telegram Bot ─────────────────────────────────────────
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
-
-# ── MLflow ───────────────────────────────────────────────
 MLFLOW_TRACKING_URI=http://localhost:5000
 MLFLOW_EXPERIMENT_NAME=ml-ayram-forex
-
-# ── Configuración del bot ────────────────────────────────
 BOT_MODE=paper-trading
 LOG_LEVEL=INFO
 LOG_FILE=logs/bot.log
-
-# ── APIs externas ────────────────────────────────────────
-FRED_API_KEY=
 ```
 
-⚠️ Cambiar contraseña de BD después de este chat.
+⚠️ Las credenciales de cTrader están guardadas en .env del servidor pero no se usan hasta tener demo.
 
 ## Configuración de señales (config/signal_config.yaml)
 
@@ -165,9 +176,7 @@ Parámetros clave centralizados:
 - **Sesiones activas:** London, New York, Overlap
 - **Riesgo por trade:** 1.5% del capital
 - **Max drawdown diario:** 4% | Semanal: 8%
-- **Kelly fraction:** 25%
-- **SL:** 1.5 × ATR(14)
-- **TP1:** 1.5:1 RR (cierre 50% posición) | **TP2:** 2.5:1 RR
+- **SL:** 1.5 × ATR(14) | **TP1:** 1.5:1 RR | **TP2:** 2.5:1 RR
 - **Trailing stop:** activado al alcanzar TP1 (1.0 × ATR)
 - **Walk-forward:** 8 períodos OOS de 3 meses, mín accuracy 0.55, mín PF 1.25
 - **Reentrenamiento automático:** domingos 2am UTC
@@ -183,176 +192,128 @@ cd ~/ml-ayram && source venv/bin/activate
 ## Deploy al servidor
 
 ```bash
-# Desde local (sincroniza + reinicia servicios):
-./deploy/deploy.sh
-
-# Solo código sin reiniciar:
-./deploy/deploy.sh --no-restart
-
-# Primera instalación de systemd:
-./deploy/deploy.sh --install
+./deploy/deploy.sh              # deploy completo (rsync + reinicio todos los servicios)
+./deploy/deploy.sh --no-restart # solo código
+./deploy/deploy.sh --install    # primera instalación systemd
 ```
 
 ## Servicios systemd
 
-| Servicio | Función | Estado |
+### Servicios daemon (siempre activos, auto-reinicio)
+
+| Servicio | Función | Restart | Puerto |
+|---|---|---|---|
+| `ayram-dashboard` | FastAPI + Uvicorn | always (10s) | 8000 |
+| `ayram-signals` | Generador señales (bucle 60s) | always (30s) | — |
+
+### Timers (tareas programadas)
+
+| Timer | Servicio | Frecuencia |
 |---|---|---|
-| `ayram-dashboard` | FastAPI + Uvicorn (puerto 8000) | Activo |
-| `ayram-signals` | Generador de señales (bucle 60s) | Desactivado (espera modelos) |
-| `ayram-collector` | Descarga de datos + timer | Activo |
-| `ayram-features` | Cálculo de features + timer | Activo |
+| `ayram-collector.timer` | ayram-collector.service | Cada 15 min |
+| `ayram-features.timer` | ayram-features.service | Cada 3 horas |
+| `ayram-anomaly.timer` | ayram-anomaly.service | Cada 6 horas |
+| `ayram-train.timer` | ayram-train.service | Domingos 02:00 UTC |
+| `ayram-walkforward.timer` | ayram-walkforward.service | 1er domingo/mes 04:00 UTC |
+
+### Comandos del día a día
 
 ```bash
-# Ver logs
+# Logs en vivo
 journalctl -u ayram-dashboard -f
 journalctl -u ayram-signals -f
+journalctl -u ayram-train -f
+journalctl -u ayram-anomaly -f
 
 # Estado
 systemctl status ayram-dashboard ayram-signals
+systemctl list-timers ayram-*
 
 # Reiniciar tras git pull
 systemctl restart ayram-dashboard ayram-signals
-```
 
-## Estado actual del proyecto
-
-**Fecha de última actualización:** Feb 2026
-**Fase actual:** FASE 4 — Dataset (descarga histórica en progreso)
-
-### Checklist
-
-```
-FASE 0 — Preparación local
-[X] Git, Python 3.14.3, VSCode instalados
-[X] venv local creado, dependencias instaladas
-[X] Repositorio GitHub privado creado y primer commit
-
-FASE 1 — Servidor
-[X] DigitalOcean Droplet (206.81.31.156, Frankfurt, Ubuntu 24.04)
-[X] SSH configurado, usuario ayram creado
-[X] Firewall UFW (SSH + 443)
-[X] Python 3.12.3 + venv + requirements.server.txt instalado
-[X] Repo clonado en ~/ml-ayram
-[X] Servicios systemd configurados (deploy/systemd/)
-[X] Script de deploy creado (deploy/deploy.sh)
-
-FASE 2 — Base de Datos
-[X] Supabase PostgreSQL 17.6 (West EU)
-[X] IPv6 habilitado en Droplet (Supabase usa IPv6)
-[X] Schema ejecutado (sin TimescaleDB)
-[X] .env configurado en servidor
-[X] script init_db.py creado
-
-FASE 3 — Fuente de datos
-[X] EODHD API key verificada (intradía forex OK)
-[X] collector.py creado y probado (200 velas H1 EURUSD OK)
-[ ] Descarga histórica completa (en progreso)
-
-FASE 4 — Dataset
-[ ] Descarga histórica completada (3 años, 5 pares)
-[ ] features.py ejecutado en servidor
-[ ] labels.py ejecutado en servidor
-
-FASE 5 — Modelo
-[X] xgboost_model.py creado (XGBoost + Optuna + MLflow)
-[X] lstm_model.py creado (LSTM + Attention, PyTorch)
-[X] ensemble.py creado (votación ponderada 55/45)
-[X] src/train.py creado (orquestador de entrenamiento)
-[ ] XGBoost entrenado con datos reales (CV F1 > 0.55)
-[ ] LSTM entrenado con datos reales
-[ ] Ensemble validado con datos reales
-
-FASE 5b — Backtesting
-[X] backtest/engine.py creado (backtesting sobre señales BD)
-[X] backtest/walk_forward.py creado (Walk-Forward Validation)
-[ ] Walk-forward ejecutado con resultados satisfactorios
-
-FASE 6 — Signal Engine
-[X] src/signals/generator.py creado (señales con filtros)
-[X] src/execution/position_manager.py creado (gestión posiciones)
-[X] config/signal_config.yaml creado (configuración centralizada)
-[ ] signal engine probado end-to-end con modelos reales
-
-FASE 7 — Telegram
-[X] src/notifications/telegram.py creado (señales/errores/heartbeat)
-[ ] Bot de Telegram configurado y probado
-
-FASE 8 — Paper Trading
-[ ] 4 semanas con métricas OK
-
-FASE 9 — Live Trading
-[ ] Activado (cuando haya cuenta demo disponible)
-
-FASE 10 — Dashboard
-[X] src/dashboard/app.py creado (FastAPI backend con API completa)
-[X] src/dashboard/static/index.html creado (SPA frontend)
-[X] ayram-dashboard.service configurado en systemd
-[ ] Desplegado y accesible públicamente
-```
-
-## Dependencias principales
-
-**requirements.txt (local — sin mlflow):**
-```
-pandas>=2.1.0
-numpy>=2.0.0
-ta>=0.11.0
-scikit-learn>=1.4.0
-xgboost>=2.0.0
-torch>=2.2.0
-optuna>=3.4.0
-joblib>=1.3.0
-SQLAlchemy>=2.0.0
-psycopg2-binary>=2.9.0
-fastapi>=0.110.0
-uvicorn>=0.27.0
-pydantic>=2.0.0
-requests>=2.31.0
-python-dotenv>=1.0.0
-loguru>=0.7.0
-# Dev/análisis (solo local):
-jupyter>=1.0.0
-matplotlib>=3.8.0
-seaborn>=0.13.0
-plotly>=5.18.0
-```
-
-**requirements.server.txt (servidor — con mlflow, sin dev tools):**
-```
-(todo lo anterior excepto jupyter/matplotlib/seaborn/plotly) + mlflow>=2.9.0
+# Forzar ejecuciones manuales
+systemctl start ayram-train.service
+python -m src.monitoring.model_health --days 30
+python -m src.monitoring.anomaly_detector
+python -m src.analysis.monthly_summary --last-n-days 30 --prompt
 ```
 
 ## Dashboard API (FastAPI)
 
-Endpoints disponibles en `src/dashboard/app.py`:
-- `GET /` → SPA (index.html)
-- `GET /api/status` → estado del sistema
-- `GET /api/signals/latest` → señales recientes
-- `GET /api/signals/history` → historial paginado
-- `GET /api/chart/{pair}/{tf}` → velas OHLCV + señales
-- `GET /api/metrics` → distribución y stats
-- `GET /api/performance` → rendimiento trades cerrados
-- `GET /api/positions` → posiciones abiertas
-- `GET /api/config` → configuración actual
-- `POST /api/config` → actualizar filtros
+Endpoints en `src/dashboard/app.py`:
 
-```bash
-# Arrancar localmente:
-uvicorn src.dashboard.app:app --host 0.0.0.0 --port 8000 --workers 1
+| Endpoint | Descripción |
+|---|---|
+| `GET /` | SPA (index.html) |
+| `GET /api/status` | Estado del sistema |
+| `GET /api/signals/latest` | Señales recientes |
+| `GET /api/signals/history` | Historial paginado con filtros |
+| `GET /api/chart/{pair}/{tf}` | Velas OHLCV + señales superpuestas |
+| `GET /api/metrics` | Distribución y stats de señales |
+| `GET /api/performance` | Rendimiento trades cerrados + equity curve |
+| `GET /api/positions` | Posiciones abiertas con PnL flotante |
+| `GET /api/monitor` | Frescura de datos OHLCV y features |
+| `GET /api/config` | Configuración filtros actual |
+| `POST /api/config` | Actualizar filtros en caliente |
+
+Frontend SPA con 7 secciones: Dashboard, Gráfico (lightweight-charts), Historial, Métricas (Chart.js), Rendimiento, Monitor de datos, Configuración.
+
+## Sistema de monitoreo
+
+### model_health.py
+- Compara rendimiento actual vs baselines OOS del walk-forward
+- Detecta degradación: warning (20%), alert (35%), critical (50%)
+- Auto-retrain opcional si degradación crítica
+- Genera reporte Telegram + JSON
+
+### anomaly_detector.py (cada 6h)
+6 checks automáticos:
+1. Signal Drought — sin señales >5 días
+2. Drawdown — DD >8% últimos 7 días
+3. Recent Win Rate — WR <35% últimos 20 trades
+4. Stale Data — OHLCV >2h sin actualizar
+5. Stale Models — modelos >14 días sin reentrenar
+6. Anomalous Signals — >30 señales/24h o sesgo >90%
+
+### monthly_summary.py (1er domingo/mes)
+- Genera JSON con métricas globales + por par + por TF + semanal
+- Crea prompt optimizado para Claude/ChatGPT con análisis estratégico
+- Output: `results/summary_LABEL.json` + `results/ai_prompt_LABEL.md`
+
+## Estado actual del proyecto
+
+**Fecha de última actualización:** Feb 2026
+
+### Checklist
+
+```
+FASE 0 — Preparación local           [COMPLETADA]
+FASE 1 — Servidor DigitalOcean       [COMPLETADA]
+FASE 2 — Base de Datos Supabase      [COMPLETADA]
+FASE 3 — Fuente de datos EODHD       [COMPLETADA]
+FASE 4 — Dataset                      [EN PROGRESO — descarga histórica]
+FASE 5 — Modelos ML                   [CÓDIGO LISTO — pendiente datos reales]
+FASE 5b — Backtesting + Walk-Forward  [CÓDIGO LISTO — pendiente datos reales]
+FASE 6 — Signal Engine                [CÓDIGO LISTO — pendiente modelos]
+FASE 7 — Telegram                     [CÓDIGO LISTO — pendiente configurar bot]
+FASE 8 — Paper Trading                [PENDIENTE]
+FASE 9 — Live Trading                 [PENDIENTE]
+FASE 10 — Dashboard                   [COMPLETADA]
+FASE 11 — Monitoreo + Alertas         [COMPLETADA]
+FASE 12 — Análisis IA mensual         [COMPLETADA]
 ```
 
 ## Notas técnicas
 
 - **Nunca commitear .env** con credenciales
 - **Modelos grandes (.pt, .ubj)** en .gitignore
-- **H4** se construye con `resample_h4()` desde H1 en collector.py
-- **Paper trading:** PnL calculado matemáticamente en position_manager.py
-- **Switch live:** cuando haya demo, cambiar `CTRADER_ENV=demo` y activar ctrader_client.py
-- **Servidor Python 3.12.3 / Local Python 3.14.3** — código compatible con ambas versiones
-- El servidor tiene soporte CUDA 12.8 (torch instalado con +cu128)
-- **Backtesting** incluye simulación de spread y slippage
-- **Walk-Forward** soporta ventana rolling y expanding
-- **signal_config.yaml** centraliza todos los parámetros ajustables del bot
+- **H4** se construye con `resample_h4()` desde H1
+- **Paper trading:** PnL calculado matemáticamente
+- **Servidor Python 3.12.3 / Local Python 3.14.3** — compatible ambas versiones
+- **CUDA 12.8** disponible en servidor (torch con +cu128)
+- **Todos los servicios sobreviven reinicios** del servidor (systemd enable + Restart=always)
+- **deploy.sh** sincroniza código y reinicia todos los servicios y timers automáticamente
 
 ---
 

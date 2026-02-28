@@ -159,9 +159,14 @@ def run_labeling(
 
             df = pd.read_sql(
                 text("""
-                    SELECT * FROM features_computed
-                    WHERE pair = :pair AND timeframe = :tf
-                    ORDER BY timestamp
+                    SELECT fc.*, r.open, r.high, r.low, r.close
+                    FROM features_computed fc
+                    JOIN ohlcv_raw r
+                      ON r.pair = fc.pair
+                     AND r.timeframe = fc.timeframe
+                     AND r.timestamp = fc.timestamp
+                    WHERE fc.pair = :pair AND fc.timeframe = :tf
+                    ORDER BY fc.timestamp
                 """),
                 engine,
                 params={"pair": pair, "tf": tf},

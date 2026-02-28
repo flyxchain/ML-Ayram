@@ -51,14 +51,15 @@ class TrainResult:
 
 def _labeled_row_count(engine, pair: str, tf: str) -> int:
     """Cuenta filas etiquetadas disponibles para un par/timeframe."""
-    row = engine.connect().execute(
-        text("""
-            SELECT COUNT(*) FROM features_computed
-            WHERE pair = :pair AND timeframe = :tf
-              AND label IS NOT NULL
-        """),
-        {"pair": pair, "tf": tf},
-    ).fetchone()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("""
+                SELECT COUNT(*) FROM features_computed
+                WHERE pair = :pair AND timeframe = :tf
+                  AND label IS NOT NULL
+            """),
+            {"pair": pair, "tf": tf},
+        ).fetchone()
     return int(row[0]) if row else 0
 
 

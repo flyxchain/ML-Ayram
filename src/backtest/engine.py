@@ -166,15 +166,14 @@ def _load_signals(
     min_confidence: float,
 ) -> pd.DataFrame:
     """Carga señales válidas (direction != 0, sin filter_reason) de la BD."""
-    pair_list = ", ".join(f"'{p}'" for p in pairs)
-    tf_list   = ", ".join(f"'{t}'" for t in timeframes)
+    from sqlalchemy import bindparam
 
     df = pd.read_sql(
-        text(f"""
+        text("""
             SELECT *
             FROM signals
-            WHERE pair        IN ({pair_list})
-              AND timeframe   IN ({tf_list})
+            WHERE pair        = ANY(:pairs)
+              AND timeframe   = ANY(:timeframes)
               AND timestamp   >= :date_from
               AND timestamp   <= :date_to
               AND direction   != 0
@@ -184,6 +183,8 @@ def _load_signals(
         """),
         engine,
         params={
+            "pairs":     pairs,
+            "timeframes": timeframes,
             "date_from": date_from,
             "date_to":   date_to,
             "min_conf":  min_confidence,

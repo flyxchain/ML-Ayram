@@ -264,15 +264,27 @@ def download_incremental():
                 logger.error(f"  Error {pair} {tf}: {e}")
             time.sleep(0.3)
 
-        # Reconstruir H4 solo si hay datos nuevos de H1
+        # Reconstruir H4 solo con los últimos 2 días de H1 (ventana de resampleo)
+        # Leer el último H4 guardado para saber desde dónde reconstruir
         try:
-            df_h1 = pd.read_sql(
-                text("SELECT * FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'H1' ORDER BY timestamp"),
-                engine,
-                params={"pair": pair},
+            with engine.connect() as conn:
+                last_h4 = conn.execute(
+                    text("SELECT MAX(timestamp) FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'H4'"),
+                    {"pair": pair},
+                ).fetchone()[0]
+            # Margen de 2 periodos H4 (8h) hacia atrás para no perder la vela en construcción
+            h1_from = (
+                pd.Timestamp(last_h4).tz_localize("UTC") - pd.Timedelta(hours=8)
+                if last_h4
+                else pd.Timestamp("2000-01-01", tz="UTC")
             )
-            if not df_h1.empty:
-                df_h4  = resample_h4(df_h1)
+            df_h1_recent = pd.read_sql(
+                text("SELECT * FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'H1' AND timestamp >= :from_ts ORDER BY timestamp"),
+                engine,
+                params={"pair": pair, "from_ts": str(h1_from)},
+            )
+            if not df_h1_recent.empty:
+                df_h4  = resample_h4(df_h1_recent)
                 saved  = save_to_db(df_h4, engine)
                 total += saved
         except Exception as e:

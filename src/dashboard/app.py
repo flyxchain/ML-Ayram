@@ -11,6 +11,7 @@ Endpoints:
   GET  /api/metrics               → distribución y stats de señales
   GET  /api/performance           → rendimiento real de trades cerrados
   GET  /api/positions             → posiciones abiertas actualmente
+  GET  /api/monitor               → estado de frescura de datos (monitor)
   GET  /api/config                → configuración actual de filtros
   POST /api/config                → actualizar filtros del generador
 
@@ -406,6 +407,95 @@ def get_open_positions():
 
         return rows
     except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ── /api/monitor ──────────────────────────────────────────────────────────────
+
+@app.get("/api/monitor")
+def get_monitor():
+    """Estado de frescura de datos para monitoreo sin SSH."""
+    try:
+        now = datetime.now(timezone.utc)
+
+        # Última vela por par/timeframe
+        ohlcv = _query("""
+            SELECT pair, timeframe,
+                   MAX(timestamp) AS last_candle,
+                   COUNT(*)       AS total_rows
+            FROM ohlcv_raw
+            GROUP BY pair, timeframe
+            ORDER BY pair, timeframe
+        """)
+
+        # Últimos features por par/timeframe
+        features = _query("""
+            SELECT pair, timeframe,
+                   MAX(timestamp) AS last_feature,
+                   COUNT(*)       AS total_rows
+            FROM features_computed
+            GROUP BY pair, timeframe
+            ORDER BY pair, timeframe
+        """)
+
+        # Umbrales de alerta (minutos sin actualizar)
+        STALE_THRESHOLDS = {"M15": 60, "H1": 180, "H4": 480, "D1": 1800}
+
+        def build_rows(df, ts_col):
+            rows = []
+            for _, r in df.iterrows():
+                ts = pd.to_datetime(r[ts_col], utc=True) if pd.notna(r[ts_col]) else None
+                age_min = (now - ts).total_seconds() / 60 if ts else None
+                threshold = STALE_THRESHOLDS.get(r["timeframe"], 180)
+                status = "ok"
+                if age_min is None:
+                    status = "no_data"
+                elif age_min > threshold * 3:
+                    status = "critical"
+                elif age_min > threshold:
+                    status = "stale"
+                rows.append({
+                    "pair":       r["pair"],
+                    "timeframe":  r["timeframe"],
+                    "last_update": str(ts) if ts else None,
+                    "age_minutes": round(age_min, 1) if age_min else None,
+                    "total_rows":  int(r["total_rows"]),
+                    "status":      status,
+                })
+            return rows
+
+        ohlcv_rows    = build_rows(ohlcv, "last_candle")
+        features_rows = build_rows(features, "last_feature")
+
+        # Resumen global
+        ohlcv_ok    = sum(1 for r in ohlcv_rows if r["status"] == "ok")
+        feat_ok     = sum(1 for r in features_rows if r["status"] == "ok")
+        ohlcv_total = len(ohlcv_rows)
+        feat_total  = len(features_rows)
+
+        # Total velas y features en BD
+        total_candles  = sum(r["total_rows"] for r in ohlcv_rows)
+        total_features = sum(r["total_rows"] for r in features_rows)
+
+        # Última actividad global
+        last_candle_global  = ohlcv["last_candle"].max()  if not ohlcv.empty else None
+        last_feature_global = features["last_feature"].max() if not features.empty else None
+
+        return {
+            "server_time":     now.isoformat(),
+            "summary": {
+                "collector_health":  f"{ohlcv_ok}/{ohlcv_total} OK",
+                "features_health":   f"{feat_ok}/{feat_total} OK",
+                "total_candles":     total_candles,
+                "total_features":    total_features,
+                "last_candle":       str(last_candle_global) if last_candle_global else None,
+                "last_feature":      str(last_feature_global) if last_feature_global else None,
+            },
+            "ohlcv":    ohlcv_rows,
+            "features": features_rows,
+        }
+    except Exception as e:
+        logger.error(f"/api/monitor error: {e}")
         raise HTTPException(500, str(e))
 
 

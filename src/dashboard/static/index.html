@@ -129,6 +129,7 @@
     <button class="nav-link"         onclick="showPage('history',this)">Historial</button>
     <button class="nav-link"         onclick="showPage('metrics',this)">Métricas</button>
     <button class="nav-link"         onclick="showPage('performance',this)">Rendimiento</button>
+    <button class="nav-link"         onclick="showPage('monitor',this)">Monitor</button>
     <button class="nav-link"         onclick="showPage('config',this)">Configuración</button>
   </div>
   <div class="nav-status">
@@ -370,6 +371,72 @@
   </div>
 </div>
 
+<!-- ══════════ MONITOR ══════════ -->
+<div id="page-monitor" class="page">
+  <div class="section-header" style="margin-bottom:16px">
+    <span class="section-title">📶 Monitor de datos</span>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span id="mon-server-time" style="color:var(--muted);font-size:12px"></span>
+      <button class="btn btn-ghost" onclick="loadMonitor()">↻ Actualizar</button>
+      <label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">
+        <input type="checkbox" id="mon-auto" checked> Auto 30s
+      </label>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="grid-4">
+    <div class="card">
+      <div class="card-title">Collector (OHLCV)</div>
+      <div class="card-value" id="mon-coll-health">—</div>
+      <div class="card-sub" id="mon-coll-total">— velas en BD</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Features</div>
+      <div class="card-value" id="mon-feat-health">—</div>
+      <div class="card-sub" id="mon-feat-total">— features en BD</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Última vela descargada</div>
+      <div class="card-value" style="font-size:16px" id="mon-last-candle">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Último feature calculado</div>
+      <div class="card-value" style="font-size:16px" id="mon-last-feature">—</div>
+    </div>
+  </div>
+
+  <!-- Tabla OHLCV -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-header">
+      <span class="section-title">📊 Datos OHLCV (Collector)</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Par</th><th>TF</th><th>Última vela</th><th>Antigüedad</th><th>Filas</th><th>Estado</th>
+        </tr></thead>
+        <tbody id="mon-ohlcv-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tabla Features -->
+  <div class="card">
+    <div class="section-header">
+      <span class="section-title">⚙️ Features calculados</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Par</th><th>TF</th><th>Último feature</th><th>Antigüedad</th><th>Filas</th><th>Estado</th>
+        </tr></thead>
+        <tbody id="mon-feat-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════ CONFIGURACIÓN ══════════ -->
 <div id="page-config" class="page">
   <div class="card" style="max-width:700px">
@@ -423,6 +490,7 @@ function showPage(name, btn) {
   if (name === 'history')     loadHistory(1);
   if (name === 'metrics')     loadMetrics();
   if (name === 'performance') loadPerformance();
+  if (name === 'monitor')     loadMonitor();
   if (name === 'config')      loadConfig();
 }
 
@@ -521,13 +589,14 @@ async function loadDashboard() {
     </tr>`).join('');
 
   // Posiciones abiertas
-  const positions = await fetch('/api/positions').then(r => r.json()).catch(() => []);
-  const totalFloat = positions.reduce((s, p) => s + (p.floating_pnl ?? 0), 0);
+  const positions = await fetch('/api/positions').then(r => r.ok ? r.json() : []).catch(() => []);
+  const posArr = Array.isArray(positions) ? positions : [];
+  const totalFloat = posArr.reduce((s, p) => s + (p.floating_pnl ?? 0), 0);
   document.getElementById('kpi-positions-pnl').textContent =
-    positions.length ? `PnL flotante: ${totalFloat >= 0 ? '+' : ''}${totalFloat.toFixed(2)}€` : 'Sin posiciones abiertas';
+    posArr.length ? `PnL flotante: ${totalFloat >= 0 ? '+' : ''}${totalFloat.toFixed(2)}€` : 'Sin posiciones abiertas';
 
-  document.getElementById('positions-tbody').innerHTML = positions.length
-    ? positions.map(p => `
+  document.getElementById('positions-tbody').innerHTML = posArr.length
+    ? posArr.map(p => `
         <tr>
           <td><b>${p.pair}</b></td>
           <td>${p.timeframe}</td>
@@ -739,6 +808,97 @@ async function loadPerformance() {
       <td class="${pnlClass(t.pnl)}">${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}€</td>
       <td>${t.duration_bars}</td>
     </tr>`).join('');
+}
+
+// ── Monitor ───────────────────────────────────────────────────────────────
+let _monitorInterval = null;
+
+function monStatusBadge(status) {
+  const map = {
+    ok:       '<span class="badge badge-tp">✅ OK</span>',
+    stale:    '<span class="badge" style="background:#d2992222;color:#d29922;border:1px solid #d2992244">⚠️ Retrasado</span>',
+    critical: '<span class="badge badge-sl">🛑 Crítico</span>',
+    no_data:  '<span class="badge badge-neut">— Sin datos</span>',
+  };
+  return map[status] || status;
+}
+
+function ageText(minutes) {
+  if (minutes == null) return '—';
+  if (minutes < 60)   return Math.round(minutes) + ' min';
+  if (minutes < 1440) return (minutes / 60).toFixed(1) + ' h';
+  return (minutes / 1440).toFixed(1) + ' d';
+}
+
+function ageColor(status) {
+  if (status === 'ok')       return 'color:var(--green)';
+  if (status === 'stale')    return 'color:var(--yellow)';
+  if (status === 'critical') return 'color:var(--red)';
+  return 'color:var(--muted)';
+}
+
+async function loadMonitor() {
+  try {
+    const d = await fetch('/api/monitor').then(r => r.json());
+    if (d.detail) throw new Error(d.detail);
+
+    document.getElementById('mon-server-time').textContent = 'Servidor: ' + fmts(d.server_time);
+
+    // KPIs
+    const s = d.summary;
+    document.getElementById('mon-coll-total').textContent = s.total_candles?.toLocaleString() + ' velas en BD';
+    document.getElementById('mon-feat-total').textContent = s.total_features?.toLocaleString() + ' features en BD';
+    document.getElementById('mon-last-candle').textContent = s.last_candle ? fmts(s.last_candle) : '—';
+    document.getElementById('mon-last-feature').textContent = s.last_feature ? fmts(s.last_feature) : '—';
+
+    // Colorear KPIs según salud
+    const collEl = document.getElementById('mon-coll-health');
+    collEl.textContent = s.collector_health;
+    const ohlcvCrit  = d.ohlcv.filter(r => r.status === 'critical').length;
+    const ohlcvStale = d.ohlcv.filter(r => r.status === 'stale').length;
+    collEl.className = 'card-value ' + (ohlcvCrit > 0 ? 'red' : ohlcvStale > 0 ? 'yellow' : 'green');
+
+    const featEl = document.getElementById('mon-feat-health');
+    featEl.textContent = s.features_health;
+    const featCrit  = d.features.filter(r => r.status === 'critical').length;
+    const featStale = d.features.filter(r => r.status === 'stale').length;
+    featEl.className = 'card-value ' + (featCrit > 0 ? 'red' : featStale > 0 ? 'yellow' : 'green');
+
+    // Tabla OHLCV
+    document.getElementById('mon-ohlcv-tbody').innerHTML = d.ohlcv.map(r => `
+      <tr>
+        <td><b>${r.pair}</b></td>
+        <td>${r.timeframe}</td>
+        <td style="font-size:12px">${r.last_update ? fmts(r.last_update) : '—'}</td>
+        <td style="${ageColor(r.status)}">${ageText(r.age_minutes)}</td>
+        <td>${r.total_rows.toLocaleString()}</td>
+        <td>${monStatusBadge(r.status)}</td>
+      </tr>`).join('');
+
+    // Tabla Features
+    document.getElementById('mon-feat-tbody').innerHTML = d.features.map(r => `
+      <tr>
+        <td><b>${r.pair}</b></td>
+        <td>${r.timeframe}</td>
+        <td style="font-size:12px">${r.last_update ? fmts(r.last_update) : '—'}</td>
+        <td style="${ageColor(r.status)}">${ageText(r.age_minutes)}</td>
+        <td>${r.total_rows.toLocaleString()}</td>
+        <td>${monStatusBadge(r.status)}</td>
+      </tr>`).join('');
+
+  } catch(e) {
+    document.getElementById('mon-ohlcv-tbody').innerHTML =
+      `<tr><td colspan="6" style="color:var(--red);padding:20px">Error: ${e.message}</td></tr>`;
+  }
+
+  // Auto-refresh cada 30s mientras la pestaña esté activa
+  clearInterval(_monitorInterval);
+  if (document.getElementById('mon-auto')?.checked) {
+    _monitorInterval = setInterval(() => {
+      if (document.getElementById('page-monitor').classList.contains('active')) loadMonitor();
+      else clearInterval(_monitorInterval);
+    }, 30000);
+  }
 }
 
 // ── Configuración ─────────────────────────────────────────────────────────

@@ -199,17 +199,51 @@ def compute_htf_features(df_ltf: pd.DataFrame, df_htf: pd.DataFrame) -> pd.DataF
 def process_pair_timeframe(pair: str, timeframe: str, engine) -> int:
     """
     Calcula features para un par/timeframe y los guarda en features_computed.
-    Devuelve el número de filas insertadas.
+    Modo incremental: solo procesa velas nuevas desde el último feature guardado.
+    Devuelve el número de filas insertadas/actualizadas.
     """
     logger.info(f"Calculando features: {pair} {timeframe}")
 
-    df = pd.read_sql(
-        text("""SELECT * FROM ohlcv_raw
-            WHERE pair = :pair AND timeframe = :tf
-            ORDER BY timestamp"""),
-        engine,
-        params={"pair": pair, "tf": timeframe},
-    )
+    # Buscar el timestamp más reciente ya calculado
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT MAX(timestamp) FROM features_computed WHERE pair = :pair AND timeframe = :tf"),
+            {"pair": pair, "tf": timeframe},
+        ).fetchone()
+    last_feature_ts = row[0] if row and row[0] else None
+
+    # Para calcular indicadores de las velas nuevas necesitamos contexto histórico
+    # (EMA200 requiere 200 velas, más margen = 250)
+    CONTEXT_BARS = 250
+
+    if last_feature_ts is None:
+        # Primera vez: cargar todo
+        df = pd.read_sql(
+            text("SELECT * FROM ohlcv_raw WHERE pair = :pair AND timeframe = :tf ORDER BY timestamp"),
+            engine,
+            params={"pair": pair, "tf": timeframe},
+        )
+    else:
+        # Incremental: cargar contexto + velas nuevas
+        df = pd.read_sql(
+            text("""
+                SELECT * FROM ohlcv_raw
+                WHERE pair = :pair AND timeframe = :tf
+                  AND timestamp >= (
+                      SELECT timestamp FROM ohlcv_raw
+                      WHERE pair = :pair AND timeframe = :tf
+                        AND timestamp <= :last_ts
+                      ORDER BY timestamp DESC
+                      LIMIT 1 OFFSET :ctx
+                  )
+                ORDER BY timestamp
+            """),
+            engine,
+            params={"pair": pair, "tf": timeframe, "last_ts": str(last_feature_ts), "ctx": CONTEXT_BARS - 1},
+        )
+        if df.empty:
+            logger.debug(f"  Sin velas nuevas para {pair} {timeframe}")
+            return 0
 
     if len(df) < 210:
         logger.warning(f"  Insuficientes velas ({len(df)}) para {pair} {timeframe}, mínimo 210")

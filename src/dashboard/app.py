@@ -85,6 +85,7 @@ TAGS_META = [
     {"name": "Notifications", "description": "Historial de notificaciones Telegram y reglas de alerta."},
     {"name": "Config",        "description": "Configuración de filtros del generador y bot."},
     {"name": "Docs",          "description": "Documentación del proyecto en formato Markdown."},
+    {"name": "Models",        "description": "Comparación side-by-side de modelos XGBoost vs LSTM."},
 ]
 
 app = FastAPI(
@@ -1237,6 +1238,98 @@ def api_backtest_quick_stats():
     except Exception as e:
         logger.error(f"/api/backtest/quick-stats error: {e}")
         return {"stats": [], "has_signals": False, "error": str(e)}
+
+
+# ── /api/models/compare — Comparador XGBoost vs LSTM ─────────────────────
+
+@app.get("/api/models/compare", tags=["Models"],
+         summary="Comparar modelos XGBoost vs LSTM",
+         description="Escanea models/saved/ y devuelve métricas lado a lado por par/timeframe.")
+def compare_models():
+    """Devuelve métricas de todos los modelos guardados, agrupados por par/TF."""
+    try:
+        comparisons = {}  # key = "PAIR_TF"
+
+        # --- XGBoost: leer *_meta.json ---
+        for meta_file in sorted(MODELS_DIR.glob("xgb_*_meta.json")):
+            try:
+                meta = json.loads(meta_file.read_text())
+                pair = meta.get("pair", "")
+                tf   = meta.get("timeframe", "")
+                key  = f"{pair}_{tf}"
+                ts   = meta.get("trained_at", "")
+                m    = meta.get("metrics", {})
+
+                # Quedarnos solo con el más reciente por par/TF
+                prev = comparisons.get(key, {}).get("xgb", {})
+                if not prev or ts > prev.get("trained_at", ""):
+                    comparisons.setdefault(key, {"pair": pair, "timeframe": tf})
+                    model_path = meta_file.with_suffix(".ubj")
+                    comparisons[key]["xgb"] = {
+                        "trained_at":  ts,
+                        "cv_f1_mean":  m.get("cv_f1_mean"),
+                        "cv_f1_std":   m.get("cv_f1_std"),
+                        "cv_f1_folds": m.get("cv_f1_folds", []),
+                        "n_features":  len(meta.get("features", [])),
+                        "file_size_kb": round(model_path.stat().st_size / 1024, 1) if model_path.exists() else None,
+                    }
+            except Exception as e:
+                logger.warning(f"Error leyendo {meta_file.name}: {e}")
+
+        # --- LSTM: intentar cargar checkpoints .pt ---
+        try:
+            import torch
+            _has_torch = True
+        except ImportError:
+            _has_torch = False
+
+        for pt_file in sorted(MODELS_DIR.glob("lstm_*.pt")):
+            try:
+                # Extraer pair/tf del nombre: lstm_PAIR_TF_YYYYMMDD_HHMM.pt
+                parts = pt_file.stem.split("_")
+                if len(parts) < 4:
+                    continue
+                pair = parts[1]
+                tf   = parts[2]
+                ts   = "_".join(parts[3:])  # YYYYMMDD_HHMM
+                key  = f"{pair}_{tf}"
+
+                prev = comparisons.get(key, {}).get("lstm", {})
+                if not prev or ts > prev.get("trained_at", ""):
+                    comparisons.setdefault(key, {"pair": pair, "timeframe": tf})
+                    lstm_info = {
+                        "trained_at":   ts,
+                        "file_size_kb": round(pt_file.stat().st_size / 1024, 1),
+                    }
+
+                    if _has_torch:
+                        ckpt = torch.load(str(pt_file), map_location="cpu", weights_only=False)
+                        m = ckpt.get("metrics", {})
+                        lstm_info["best_val_f1"] = m.get("best_val_f1")
+                        cfg = ckpt.get("model_config", {})
+                        lstm_info["hidden_size"] = cfg.get("hidden_size")
+                        lstm_info["num_layers"]  = cfg.get("num_layers")
+                        lstm_info["n_features"]  = len(ckpt.get("feature_cols", []))
+
+                    comparisons[key]["lstm"] = lstm_info
+            except Exception as e:
+                logger.warning(f"Error leyendo {pt_file.name}: {e}")
+
+        # Ordenar por par y TF
+        result = sorted(comparisons.values(), key=lambda x: (x["pair"], x["timeframe"]))
+
+        return _safe_json({
+            "models_dir":  str(MODELS_DIR),
+            "total_pairs":  len(result),
+            "has_torch":    _has_torch if '_has_torch' in dir() else False,
+            "comparisons":  result,
+        })
+    except Exception as e:
+        logger.error(f"/api/models/compare error: {e}")
+        raise HTTPException(500, str(e))
+
+
+
 
 
 # ── /api/docs — Documentación dinámica ──────────────────────────────────

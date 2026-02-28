@@ -37,6 +37,11 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
+  /* Hamburger button — hidden on desktop */
+  .nav-burger { display: none; background: none; border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-size: 22px; padding: 4px 10px; cursor: pointer; line-height: 1; }
+  .nav-burger:hover { background: var(--border); }
+
   .page { display: none; padding: 24px; max-width: 1400px; margin: 0 auto; }
   .page.active { display: block; }
 
@@ -363,13 +368,89 @@
   .add-rule-btn .save { background: var(--blue); color: #fff; }
   .add-rule-btn .cancel { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
 
+  /* ── Models comparator page ─────────────────────── */
+  .models-filter { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
+  .models-filter select { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 12px; font-size: 13px; }
+  .models-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; }
+  .model-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .model-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+    padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .model-pair { font-size: 18px; font-weight: 700; color: var(--text); }
+  .model-tf { font-size: 13px; color: var(--muted); background: var(--bg); padding: 3px 10px; border-radius: 12px; }
+  .model-vs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .model-side { background: var(--bg); border-radius: var(--radius); padding: 14px; position: relative; }
+  .model-side-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+    margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .model-side.xgb .model-side-title { color: var(--blue); }
+  .model-side.lstm .model-side-title { color: var(--purple); }
+  .model-metric { display: flex; justify-content: space-between; padding: 5px 0;
+    font-size: 13px; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .model-metric:last-child { border-bottom: none; }
+  .model-metric .mk { color: var(--muted); }
+  .model-metric .mv { font-weight: 600; color: var(--text); }
+  .model-metric .mv.winner { color: var(--green); }
+  .model-no-data { color: var(--muted); font-size: 12px; font-style: italic; padding: 20px 0; text-align: center; }
+  .f1-bar-wrap { height: 6px; background: #21262d; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .f1-bar { height: 100%; border-radius: 3px; transition: width .4s ease; }
+  .f1-bar.xgb { background: var(--blue); }
+  .f1-bar.lstm { background: var(--purple); }
+  .models-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .ms-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; text-align: center; }
+  .ms-val { font-size: 24px; font-weight: 700; }
+  .ms-label { font-size: 11px; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
+
+  /* ── Responsive: Tablet ───────────────────────── */
   @media(max-width:900px) {
     .grid-4,.grid-3 { grid-template-columns: 1fr 1fr; }
     .config-grid,.grid-2 { grid-template-columns: 1fr; }
-    nav { padding: 0 12px; gap: 12px; }
+    nav { padding: 0 12px; gap: 8px; }
+    .models-grid { grid-template-columns: 1fr; }
   }
+
+  /* ── Responsive: Mobile ───────────────────────── */
+  @media(max-width:768px) {
+    nav { height: auto; min-height: var(--nav-h); flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+    .nav-burger { display: block; }
+    .nav-links { display: none; width: 100%; flex-direction: column; gap: 2px;
+      padding-top: 8px; border-top: 1px solid var(--border); }
+    .nav-links.open { display: flex; }
+    .nav-link { padding: 10px 12px; font-size: 14px; }
+    .nav-status { display: none; }
+    .page { padding: 14px 10px; }
+    .card-value { font-size: 22px; }
+    .grid-4,.grid-3 { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grid-2 { grid-template-columns: 1fr; gap: 10px; }
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { min-width: 600px; }
+    .chart-box { height: 260px !important; }
+    .section-header { flex-direction: column; gap: 8px; align-items: flex-start !important; }
+    .model-vs { grid-template-columns: 1fr; }
+    .docs-content { padding: 16px; }
+    .notif-filters { flex-direction: column; }
+    .alerts-tabs { overflow-x: auto; }
+    .models-summary { grid-template-columns: 1fr 1fr; }
+    .models-filter { flex-direction: column; align-items: stretch; }
+  }
+
   @media(max-width:500px) {
     .grid-4,.grid-3 { grid-template-columns: 1fr; }
+    .models-summary { grid-template-columns: 1fr; }
+    .bt-kpi-grid { grid-template-columns: 1fr 1fr; }
+    body { padding-bottom: env(safe-area-inset-bottom, 0); }
+    .page { padding: 10px 8px; }
+    table { min-width: 500px; font-size: 12px; }
+    .card { padding: 14px; }
+    .model-card { padding: 14px; }
+    .model-pair { font-size: 16px; }
+    .ms-val { font-size: 20px; }
+  }
+
+  /* Touch improvements */
+  @media(hover:none) and (pointer:coarse) {
+    .nav-link, button, select, .alerts-tab { touch-action: manipulation; min-height: 44px; }
+    .table-wrap { -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; }
   }
 </style>
 </head>
@@ -377,6 +458,7 @@
 
 <nav>
   <span class="nav-brand">📈 ML-Ayram</span>
+  <button class="nav-burger" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menú">☰</button>
   <div class="nav-links">
     <button class="nav-link active"  onclick="showPage('dashboard',this)">Dashboard</button>
     <button class="nav-link"         onclick="showPage('pipeline',this)">Pipeline</button>
@@ -392,6 +474,7 @@
     <button class="nav-link"         onclick="showPage('backtest',this)">🎯 Backtest</button>
     <button class="nav-link"         onclick="showPage('docs',this)">📚 Docs</button>
     <button class="nav-link"         onclick="showPage('alerts',this)">🔔 Alertas</button>
+    <button class="nav-link"         onclick="showPage('models',this)">🧠 Modelos</button>
   </div>
   <div class="nav-status">
     <div class="dot" id="status-dot"></div>
@@ -1303,6 +1386,31 @@
   </div>
 </div>
 
+<!-- ── Página: Comparador de Modelos ────────────────────────────────────── -->
+<div id="page-models" class="page">
+  <div class="section-header" style="margin-bottom:20px">
+    <span class="section-title">🧠 Comparador de Modelos &mdash; XGBoost vs LSTM</span>
+  </div>
+
+  <div id="models-summary" class="models-summary"></div>
+
+  <div class="models-filter">
+    <select id="models-pair-filter" onchange="renderModels()">
+      <option value="all">Todos los pares</option>
+    </select>
+    <select id="models-tf-filter" onchange="renderModels()">
+      <option value="all">Todos los TF</option>
+    </select>
+    <button onclick="loadModels()" style="padding:8px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);cursor:pointer;font-size:13px">↻ Recargar</button>
+  </div>
+
+  <div id="models-grid" class="models-grid">
+    <div class="card" style="text-align:center;padding:40px;grid-column:1/-1">
+      <div style="color:var(--muted)">Cargando modelos…</div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════ JS ══════════ -->
 <script>
 let _histCurrentPage = 1;
@@ -1315,11 +1423,13 @@ function showPage(name, btn) {
   document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   if (btn) btn.classList.add('active');
+  // Cerrar menú móvil al navegar
+  document.querySelector('.nav-links')?.classList.remove('open');
   const loaders = {
     chart: loadChart, history: () => loadHistory(1), metrics: loadMetrics,
     performance: loadPerformance, monitor: loadMonitor, config: loadConfig,
     pipeline: loadPipeline, bot: loadBotConfig, market: loadMarket, train: loadTrain,
-    backtest: loadBacktest, docs: loadDocs, alerts: loadAlerts,
+    backtest: loadBacktest, docs: loadDocs, alerts: loadAlerts, models: loadModels,
   };
   if (loaders[name]) loaders[name]();
 }
@@ -2775,6 +2885,123 @@ async function saveNewRule() {
       alert('Error creando regla');
     }
   } catch(e) { alert('Error: ' + e.message); }
+}
+
+// ── Comparador de Modelos ──────────────────────────────────────────────────────
+let _modelsData = null;
+
+async function loadModels() {
+  const grid = document.getElementById('models-grid');
+  const summary = document.getElementById('models-summary');
+  grid.innerHTML = '<div class="card" style="text-align:center;padding:40px;grid-column:1/-1"><div style="color:var(--muted)">Cargando modelos…</div></div>';
+  summary.innerHTML = '';
+
+  try {
+    const resp = await fetch('/api/models/compare');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    _modelsData = await resp.json();
+
+    // Populate filters
+    const pairSel = document.getElementById('models-pair-filter');
+    const tfSel = document.getElementById('models-tf-filter');
+    const currentPair = pairSel.value;
+    const currentTf = tfSel.value;
+
+    pairSel.innerHTML = '<option value="all">Todos los pares</option>' +
+      (_modelsData.pairs || []).map(p => `<option value="${p}">${p}</option>`).join('');
+    tfSel.innerHTML = '<option value="all">Todos los TF</option>' +
+      (_modelsData.timeframes || []).map(t => `<option value="${t}">${t}</option>`).join('');
+
+    if (currentPair !== 'all') pairSel.value = currentPair;
+    if (currentTf !== 'all') tfSel.value = currentTf;
+
+    renderModels();
+  } catch (e) {
+    grid.innerHTML = `<div class="card" style="text-align:center;padding:40px;grid-column:1/-1">
+      <div style="color:var(--red)">⚠️ Error cargando modelos: ${e.message}</div>
+      <div style="color:var(--muted);font-size:12px;margin-top:8px">Asegúrate de que hay modelos en models/saved/</div>
+    </div>`;
+  }
+}
+
+function renderModels() {
+  if (!_modelsData) return;
+  const grid = document.getElementById('models-grid');
+  const summaryEl = document.getElementById('models-summary');
+  const pairFilter = document.getElementById('models-pair-filter').value;
+  const tfFilter = document.getElementById('models-tf-filter').value;
+
+  let models = _modelsData.models || [];
+  if (pairFilter !== 'all') models = models.filter(m => m.pair === pairFilter);
+  if (tfFilter !== 'all') models = models.filter(m => m.timeframe === tfFilter);
+
+  // Summary cards
+  const s = _modelsData.summary || {};
+  summaryEl.innerHTML = `
+    <div class="ms-card"><div class="ms-val">${s.total || 0}</div><div class="ms-label">Par/TF</div></div>
+    <div class="ms-card"><div class="ms-val" style="color:var(--blue)">${s.xgb_wins || 0}</div><div class="ms-label">XGB gana</div></div>
+    <div class="ms-card"><div class="ms-val" style="color:var(--purple)">${s.lstm_wins || 0}</div><div class="ms-label">LSTM gana</div></div>
+    <div class="ms-card"><div class="ms-val" style="color:var(--muted)">${s.ties || 0}</div><div class="ms-label">Empates</div></div>
+    <div class="ms-card"><div class="ms-val" style="color:var(--blue)">${(s.avg_xgb_f1||0).toFixed(4)}</div><div class="ms-label">F1 medio XGB</div></div>
+    <div class="ms-card"><div class="ms-val" style="color:var(--purple)">${(s.avg_lstm_f1||0).toFixed(4)}</div><div class="ms-label">F1 medio LSTM</div></div>
+  `;
+
+  if (models.length === 0) {
+    grid.innerHTML = '<div class="card" style="text-align:center;padding:40px;grid-column:1/-1"><div style="color:var(--muted)">Sin modelos entrenados aún. Ejecuta el entrenamiento primero.</div></div>';
+    return;
+  }
+
+  grid.innerHTML = models.map(m => {
+    const xgb = m.xgb;
+    const lstm = m.lstm;
+    const xF1 = xgb ? xgb.f1 : 0;
+    const lF1 = lstm ? lstm.f1 : 0;
+    const maxF1 = Math.max(xF1, lF1, 0.001);
+
+    function side(data, type, f1) {
+      if (!data) return `<div class="model-side ${type}"><div class="model-side-title">${type === 'xgb' ? '🌲 XGBoost' : '🧠 LSTM'}</div><div class="model-no-data">No entrenado</div></div>`;
+      const isWinner = m.winner === type;
+      const winCls = isWinner ? ' winner' : '';
+      const trainDate = data.trained_at ? data.trained_at.replace('_', ' ') : '—';
+
+      let metricsHtml = '';
+      if (type === 'xgb') {
+        metricsHtml = `
+          <div class="model-metric"><span class="mk">F1 (CV)</span><span class="mv${winCls}">${f1.toFixed(4)}</span></div>
+          <div class="model-metric"><span class="mk">F1 std</span><span class="mv">${(data.f1_std||0).toFixed(4)}</span></div>
+          <div class="model-metric"><span class="mk">Folds</span><span class="mv">${(data.f1_folds||[]).length}</span></div>
+        `;
+      } else {
+        metricsHtml = `
+          <div class="model-metric"><span class="mk">F1 (val)</span><span class="mv${winCls}">${f1.toFixed(4)}</span></div>
+          <div class="model-metric"><span class="mk">Hidden</span><span class="mv">${data.hidden_size||'—'}</span></div>
+          <div class="model-metric"><span class="mk">Layers</span><span class="mv">${data.num_layers||'—'}</span></div>
+        `;
+      }
+
+      return `
+        <div class="model-side ${type}">
+          <div class="model-side-title">${type === 'xgb' ? '🌲 XGBoost' : '🧠 LSTM'}${isWinner ? ' ⭐' : ''}</div>
+          ${metricsHtml}
+          <div class="model-metric"><span class="mk">Features</span><span class="mv">${data.n_features||'—'}</span></div>
+          <div class="model-metric"><span class="mk">Tamaño</span><span class="mv">${data.size_kb ? data.size_kb + ' KB' : '—'}</span></div>
+          <div class="model-metric"><span class="mk">Entrenado</span><span class="mv" style="font-size:11px">${trainDate}</span></div>
+          <div class="f1-bar-wrap"><div class="f1-bar ${type}" style="width:${(f1/maxF1*100).toFixed(1)}%"></div></div>
+        </div>`;
+    }
+
+    return `
+      <div class="model-card">
+        <div class="model-card-header">
+          <span class="model-pair">${m.pair}</span>
+          <span class="model-tf">${m.timeframe}</span>
+        </div>
+        <div class="model-vs">
+          ${side(xgb, 'xgb', xF1)}
+          ${side(lstm, 'lstm', lF1)}
+        </div>
+      </div>`;
+  }).join('');
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────

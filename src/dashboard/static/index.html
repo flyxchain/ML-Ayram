@@ -158,14 +158,14 @@
 
   /* ── Trading sessions timeline ──────────────────────────── */
   .sessions-timeline { position: relative; margin: 20px 0; }
-  .session-row { display: flex; align-items: center; margin-bottom: 6px; height: 32px; }
+  .session-row { display: flex; align-items: center; margin-bottom: 6px; min-height: 32px; }
   .session-label { width: 100px; font-size: 12px; font-weight: 600; flex-shrink: 0; }
   .session-track { flex: 1; position: relative; height: 28px; background: #0d1117; border-radius: 4px; overflow: hidden; }
   .session-bar { position: absolute; top: 2px; height: 24px; border-radius: 3px; display: flex;
                  align-items: center; justify-content: center; font-size: 10px; font-weight: 600;
                  color: rgba(255,255,255,.85); }
-  .session-hours { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 2px; }
-  .session-hours span { width: calc(100% / 24); text-align: center; }
+  .session-hours { display: flex; font-size: 10px; color: var(--muted); margin-top: 4px; margin-left: 100px; }
+  .session-hours span { flex: 1; text-align: center; min-width: 0; }
   .overlap-zone { position: absolute; top: 0; height: 100%; background: rgba(255,255,255,.08);
                   border-left: 1px dashed rgba(255,255,255,.15); border-right: 1px dashed rgba(255,255,255,.15); }
   .overlap-label { position: absolute; top: -16px; font-size: 9px; color: var(--yellow); white-space: nowrap;
@@ -928,10 +928,20 @@ async function loadPipeline() {
   const hours = parseInt(document.getElementById('pipe-hours').value);
   let data;
   try {
-    data = await fetch(`/api/pipeline?hours=${hours}`).then(r => r.json());
+    const resp = await fetch(`/api/pipeline?hours=${hours}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    data = await resp.json();
   } catch(e) {
     document.getElementById('pipeline-bars').innerHTML =
-      `<div class="empty-state">Error cargando pipeline: ${e.message}</div>`;
+      `<div class="empty-state">⚠️ Endpoint /api/pipeline no disponible. Despliega la última versión de app.py.</div>`;
+    document.getElementById('pipeline-stats-grid').innerHTML = '';
+    document.getElementById('pipe-errors-tbody').innerHTML = '';
+    return;
+  }
+
+  if (!data.runs || !Array.isArray(data.runs)) {
+    document.getElementById('pipeline-bars').innerHTML =
+      `<div class="empty-state">Sin datos de pipeline</div>`;
     return;
   }
 
@@ -1084,7 +1094,7 @@ function renderSessions() {
 
   let html = '';
 
-  // Fila de horas
+  // Fila de horas (se añade fuera de session-row)
   let hourLabels = '';
   for (let h = 0; h < 24; h++) {
     hourLabels += `<span>${String(h).padStart(2,'0')}</span>`;
@@ -1115,9 +1125,8 @@ function renderSessions() {
     html += `</div></div>`;
   }
 
-  // Fila de horas de referencia
-  html += `<div class="session-row"><div class="session-label"></div>`;
-  html += `<div class="session-hours">${hourLabels}</div></div>`;
+  // Fila de horas de referencia (fuera de session-row para evitar height fijo)
+  html += `<div class="session-hours">${hourLabels}</div>`;
 
   document.getElementById('sessions-container').innerHTML = html;
 
@@ -1172,7 +1181,12 @@ async function loadCorrelations() {
   container.innerHTML = '<div class="empty-state"><div class="spinner"></div> Calculando correlaciones...</div>';
 
   try {
-    const data = await fetch(`/api/correlations?timeframe=${tf}&days=${days}`).then(r => r.json());
+    const resp = await fetch(`/api/correlations?timeframe=${tf}&days=${days}`);
+    if (!resp.ok) {
+      container.innerHTML = `<div class="empty-state">⚠️ Endpoint /api/correlations no disponible (HTTP ${resp.status}). Despliega la última versión de app.py.</div>`;
+      return;
+    }
+    const data = await resp.json();
     if (data.error) {
       container.innerHTML = `<div class="empty-state">${data.error}</div>`;
       return;
@@ -1229,7 +1243,13 @@ async function loadCorrelations() {
 // ── Bot Config ────────────────────────────────────────────────────────────
 async function loadBotConfig() {
   try {
-    const cfg = await fetch('/api/bot').then(r => r.json());
+    const resp = await fetch('/api/bot');
+    if (!resp.ok) {
+      console.warn('Bot config endpoint no disponible (HTTP ' + resp.status + ')');
+      return;
+    }
+    const cfg = await resp.json();
+    if (!cfg || !cfg.active_pairs) return;
 
     // Pairs chips
     document.querySelectorAll('#bot-pairs .chip').forEach(ch => {
@@ -1275,13 +1295,19 @@ async function saveBotConfig() {
     notes:                      document.getElementById('bot-notes').value,
   };
 
-  const res = await fetch('/api/bot', {
-    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
-  });
-  if (res.ok) {
-    const msg = document.getElementById('bot-save-msg');
-    msg.style.display = 'inline';
-    setTimeout(() => msg.style.display = 'none', 3000);
+  try {
+    const res = await fetch('/api/bot', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (res.ok) {
+      const msg = document.getElementById('bot-save-msg');
+      msg.style.display = 'inline';
+      setTimeout(() => msg.style.display = 'none', 3000);
+    } else {
+      alert('Error guardando configuración: HTTP ' + res.status);
+    }
+  } catch(e) {
+    alert('Error de conexión: ' + e.message);
   }
 }
 

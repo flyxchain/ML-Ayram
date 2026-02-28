@@ -1,0 +1,83 @@
+{
+    "rules": [
+        {
+            "id": "signal_drought_xauusd",
+            "enabled": true,
+            "name": "Sequía señales XAUUSD",
+            "description": "Sin señales de XAUUSD durante N días",
+            "check_type": "signal_drought",
+            "pair": "XAUUSD",
+            "timeframe": null,
+            "threshold": 3,
+            "unit": "days",
+            "severity": "high",
+            "cooldown_hours": 24
+        },
+        {
+            "id": "signal_drought_any",
+            "enabled": true,
+            "name": "Sequía señales global",
+            "description": "Ningún par genera señales en N días",
+            "check_type": "signal_drought",
+            "pair": null,
+            "timeframe": null,
+            "threshold": 2,
+            "unit": "days",
+            "severity": "critical",
+            "cooldown_hours": 12
+        },
+        {
+            "id": "drawdown_global",
+            "enabled": true,
+            "name": "Drawdown excesivo",
+            "description": "Drawdown acumulado supera N%",
+            "check_type": "drawdown",
+            "pair": null,
+            "timeframe": null,
+            "threshold": 5.0,
+            "unit": "percent",
+            "severity": "high",
+            "cooldown_hours": 24
+        },
+        {
+            "id": "low_winrate",
+            "enabled": true,
+            "name": "Win rate bajo",
+            "description": "Win rate últimos 20 trades bajo N%",
+            "check_type": "low_winrate",
+            "pair": null,
+            "timeframe": null,
+            "threshold": 35.0,
+            "unit": "percent",
+            "severity": "warning",
+            "cooldown_hours": 48
+        },
+        {
+            "id": "stale_data",
+            "enabled": true,
+            "name": "Datos desactualizados",
+            "description": "Collector no ejecuta en N horas",
+            "check_type": "stale_data",
+            "pair": null,
+            "timeframe": null,
+            "threshold": 3,
+            "unit": "hours",
+            "severity": "high",
+            "cooldown_hours": 6
+        },
+        {
+            "id": "stale_models",
+            "enabled": true,
+            "name": "Modelos obsoletos",
+            "description": "Modelos sin reentrenar en N días",
+            "check_type": "stale_models",
+            "pair": null,
+            "timeframe": null,
+            "threshold": 14,
+            "unit": "days",
+            "severity": "warning",
+            "cooldown_hours": 72
+        }
+    ],
+    "last_fired": {}
+}

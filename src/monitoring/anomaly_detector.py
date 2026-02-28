@@ -406,7 +406,7 @@ def run_anomaly_detection(quiet: bool = False, notify: bool = True) -> AnomalyRe
     # Notificar si hay alertas importantes
     if notify and (report.critical > 0 or report.high > 0):
         try:
-            from src.notifications.telegram import send_message
+            from src.notifications.telegram import send_message, log_notification
             lines = [
                 f"🚨 <b>Anomaly Detection — {report.total_alerts} alertas</b>",
                 f"━━━━━━━━━━━━━━━━━━━━",
@@ -420,7 +420,14 @@ def run_anomaly_detection(quiet: bool = False, notify: bool = True) -> AnomalyRe
                         lines.append(f"   → {a.action}")
 
             lines.append(f"\n<i>🕐 {report.timestamp}</i>")
-            send_message("\n".join(lines))
+            msg = "\n".join(lines)
+            ok = send_message(msg)
+            log_notification(
+                notif_type="anomaly", severity="critical" if report.critical > 0 else "high",
+                title=f"Anomaly Detection — {report.total_alerts} alertas",
+                message=msg, delivered=ok,
+                metadata={"critical": report.critical, "high": report.high, "warnings": report.warnings},
+            )
         except Exception as e:
             logger.error(f"Error enviando Telegram: {e}")
 

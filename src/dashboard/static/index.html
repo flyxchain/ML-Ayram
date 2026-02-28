@@ -291,6 +291,78 @@
   .md-body img { max-width: 100%; border-radius: var(--radius); }
   @media(max-width:900px) { .docs-layout { grid-template-columns: 1fr; } }
 
+  /* Alerts page */
+  .alerts-tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid var(--border); }
+  .alerts-tab { padding: 10px 20px; background: none; border: none; color: var(--muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .2s; }
+  .alerts-tab:hover { color: var(--text); }
+  .alerts-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .alerts-panel { display: none; }
+  .alerts-panel.active { display: block; }
+  .notif-filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 16px; }
+  .notif-filters select, .notif-filters input { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 6px 10px; font-size: 12px; }
+  .notif-filters label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+  .notif-filters .nf-field { display: flex; flex-direction: column; gap: 4px; }
+  .notif-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .notif-table th { text-align: left; padding: 8px 10px; color: var(--muted); font-size: 11px; text-transform: uppercase;
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+  .notif-table td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
+  .notif-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .notif-wrap { max-height: 500px; overflow-y: auto; background: var(--surface); border-radius: var(--radius);
+    border: 1px solid var(--border); }
+  .notif-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .notif-badge.signal { background: rgba(30,144,255,0.15); color: #1e90ff; }
+  .notif-badge.training { background: rgba(255,165,0,0.15); color: #ffa500; }
+  .notif-badge.anomaly { background: rgba(255,60,60,0.15); color: #ff3c3c; }
+  .notif-badge.heartbeat { background: rgba(80,200,120,0.15); color: #50c878; }
+  .notif-badge.error { background: rgba(255,0,0,0.2); color: #ff4444; }
+  .notif-badge.summary { background: rgba(180,130,255,0.15); color: #b482ff; }
+  .notif-badge.alert_rule { background: rgba(255,215,0,0.15); color: #ffd700; }
+  .sev-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+  .sev-badge.info { background: rgba(100,100,255,0.12); color: #8888ff; }
+  .sev-badge.warning { background: rgba(255,165,0,0.15); color: #ffa500; }
+  .sev-badge.high { background: rgba(255,80,80,0.15); color: #ff5050; }
+  .sev-badge.critical { background: rgba(255,0,0,0.25); color: #ff2222; }
+  .notif-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .notif-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 16px; display: flex; flex-direction: column; align-items: center; min-width: 80px; }
+  .notif-stat .ns-val { font-size: 22px; font-weight: 700; color: var(--text); }
+  .notif-stat .ns-label { font-size: 10px; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
+  .rule-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; display: flex; align-items: center; gap: 16px; margin-bottom: 10px; transition: border-color .2s; }
+  .rule-card:hover { border-color: var(--blue); }
+  .rule-toggle { width: 44px; height: 24px; border-radius: 12px; background: #333; position: relative;
+    cursor: pointer; transition: background .2s; flex-shrink: 0; border: none; }
+  .rule-toggle::after { content: ''; position: absolute; width: 18px; height: 18px; border-radius: 50%;
+    background: #888; top: 3px; left: 3px; transition: all .2s; }
+  .rule-toggle.on { background: var(--blue); }
+  .rule-toggle.on::after { left: 23px; background: #fff; }
+  .rule-info { flex: 1; }
+  .rule-name { font-weight: 600; font-size: 14px; color: var(--text); }
+  .rule-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .rule-meta { display: flex; gap: 12px; margin-top: 6px; }
+  .rule-meta span { font-size: 11px; color: var(--muted); }
+  .rule-meta span b { color: var(--text); }
+  .rule-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .rule-actions button { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 6px 10px; color: var(--muted); cursor: pointer; font-size: 12px; transition: all .2s; }
+  .rule-actions button:hover { border-color: var(--blue); color: var(--text); }
+  .rule-actions button.del:hover { border-color: #ff4444; color: #ff4444; }
+  .add-rule-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px; margin-top: 16px; display: none; }
+  .add-rule-form.show { display: block; }
+  .add-rule-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .add-rule-grid label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+  .add-rule-grid .arf { display: flex; flex-direction: column; gap: 4px; }
+  .add-rule-grid select, .add-rule-grid input { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 10px; font-size: 12px; }
+  .add-rule-btn { margin-top: 14px; display: flex; gap: 10px; }
+  .add-rule-btn button { padding: 8px 20px; border-radius: var(--radius); border: none; font-weight: 600;
+    cursor: pointer; font-size: 13px; }
+  .add-rule-btn .save { background: var(--blue); color: #fff; }
+  .add-rule-btn .cancel { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+
   @media(max-width:900px) {
     .grid-4,.grid-3 { grid-template-columns: 1fr 1fr; }
     .config-grid,.grid-2 { grid-template-columns: 1fr; }
@@ -319,6 +391,7 @@
     <button class="nav-link"         onclick="showPage('config',this)">Señales</button>
     <button class="nav-link"         onclick="showPage('backtest',this)">🎯 Backtest</button>
     <button class="nav-link"         onclick="showPage('docs',this)">📚 Docs</button>
+    <button class="nav-link"         onclick="showPage('alerts',this)">🔔 Alertas</button>
   </div>
   <div class="nav-status">
     <div class="dot" id="status-dot"></div>
@@ -1099,6 +1172,137 @@
   </div>
 </div>
 
+<!-- ========== ALERTS PAGE ========== -->
+<div id="page-alerts" class="page">
+  <div class="section-header" style="margin-bottom:20px">
+    <span class="section-title">🔔 Alertas y Notificaciones</span>
+  </div>
+
+  <div class="alerts-tabs">
+    <button class="alerts-tab active" onclick="switchAlertsTab('history',this)">📬 Historial</button>
+    <button class="alerts-tab" onclick="switchAlertsTab('rules',this)">⚙️ Reglas</button>
+  </div>
+
+  <!-- PANEL 1: Historial -->
+  <div id="alerts-history" class="alerts-panel active">
+    <div class="notif-stats" id="notif-stats"></div>
+    <div class="notif-filters">
+      <div class="nf-field">
+        <label>Tipo</label>
+        <select id="nf-type" onchange="loadNotifications()">
+          <option value="">Todos</option>
+          <option value="signal">Señal</option>
+          <option value="training">Training</option>
+          <option value="anomaly">Anomalía</option>
+          <option value="heartbeat">Heartbeat</option>
+          <option value="error">Error</option>
+          <option value="summary">Resumen</option>
+          <option value="alert_rule">Regla alerta</option>
+        </select>
+      </div>
+      <div class="nf-field">
+        <label>Severidad</label>
+        <select id="nf-severity" onchange="loadNotifications()">
+          <option value="">Todas</option>
+          <option value="info">Info</option>
+          <option value="warning">Warning</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+        </select>
+      </div>
+      <div class="nf-field">
+        <label>Días</label>
+        <input type="number" id="nf-days" value="30" min="1" max="365" style="width:70px" onchange="loadNotifications()">
+      </div>
+      <div class="nf-field">
+        <label>&nbsp;</label>
+        <button onclick="loadNotifications()" style="padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px">🔄 Refrescar</button>
+      </div>
+    </div>
+    <div class="notif-wrap">
+      <table class="notif-table">
+        <thead><tr>
+          <th>Fecha</th><th>Tipo</th><th>Sev.</th><th>Título</th><th>Par</th><th>Estado</th>
+        </tr></thead>
+        <tbody id="notif-tbody"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+      <span id="notif-total" style="font-size:12px;color:var(--muted)"></span>
+      <div style="display:flex;gap:8px">
+        <button id="notif-prev" onclick="notifPage(-1)" style="padding:4px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--muted);cursor:pointer;font-size:12px">◀ Anterior</button>
+        <button id="notif-next" onclick="notifPage(1)" style="padding:4px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--muted);cursor:pointer;font-size:12px">Siguiente ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 2: Reglas -->
+  <div id="alerts-rules" class="alerts-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="color:var(--muted);font-size:13px" id="rules-count"></span>
+      <button onclick="toggleAddRule()" id="add-rule-toggle" style="padding:8px 16px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:13px;font-weight:600">➕ Nueva regla</button>
+    </div>
+
+    <div id="add-rule-form" class="add-rule-form">
+      <div style="font-weight:600;margin-bottom:12px;color:var(--text)">Nueva regla de alerta</div>
+      <div class="add-rule-grid">
+        <div class="arf">
+          <label>Nombre</label>
+          <input id="ar-name" placeholder="Ej: Drawdown alto">
+        </div>
+        <div class="arf">
+          <label>Tipo de check</label>
+          <select id="ar-type">
+            <option value="signal_drought">Sequía señales</option>
+            <option value="drawdown">Drawdown</option>
+            <option value="low_winrate">Win rate bajo</option>
+            <option value="stale_data">Datos obsoletos</option>
+            <option value="stale_models">Modelos obsoletos</option>
+          </select>
+        </div>
+        <div class="arf">
+          <label>Par (opcional)</label>
+          <select id="ar-pair">
+            <option value="">Todos</option>
+            <option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option>
+            <option>EURJPY</option><option>XAUUSD</option>
+          </select>
+        </div>
+        <div class="arf">
+          <label>Umbral</label>
+          <input id="ar-threshold" type="number" step="0.1" value="5">
+        </div>
+        <div class="arf">
+          <label>Unidad</label>
+          <select id="ar-unit">
+            <option value="days">Días</option>
+            <option value="percent">Porcentaje</option>
+            <option value="hours">Horas</option>
+          </select>
+        </div>
+        <div class="arf">
+          <label>Severidad</label>
+          <select id="ar-severity">
+            <option value="warning">Warning</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="arf">
+          <label>Cooldown (h)</label>
+          <input id="ar-cooldown" type="number" value="24" min="1">
+        </div>
+      </div>
+      <div class="add-rule-btn">
+        <button class="save" onclick="saveNewRule()">💾 Guardar</button>
+        <button class="cancel" onclick="toggleAddRule()">Cancelar</button>
+      </div>
+    </div>
+
+    <div id="rules-list"></div>
+  </div>
+</div>
+
 <!-- ══════════ JS ══════════ -->
 <script>
 let _histCurrentPage = 1;
@@ -1115,7 +1319,7 @@ function showPage(name, btn) {
     chart: loadChart, history: () => loadHistory(1), metrics: loadMetrics,
     performance: loadPerformance, monitor: loadMonitor, config: loadConfig,
     pipeline: loadPipeline, bot: loadBotConfig, market: loadMarket, train: loadTrain,
-    backtest: loadBacktest, docs: loadDocs,
+    backtest: loadBacktest, docs: loadDocs, alerts: loadAlerts,
   };
   if (loaders[name]) loaders[name]();
 }
@@ -2392,6 +2596,185 @@ async function saveConfig() {
     msg.style.display = 'inline';
     setTimeout(()=>msg.style.display='none', 3000);
   }
+}
+
+// ── Alerts / Notifications ─────────────────────────────────────────────────
+
+let _notifOffset = 0;
+const _notifLimit = 50;
+
+function switchAlertsTab(tab, btn) {
+  document.querySelectorAll('.alerts-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.alerts-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('alerts-' + tab).classList.add('active');
+  if (tab === 'history') loadNotifications();
+  if (tab === 'rules') loadAlertRules();
+}
+
+async function loadAlerts() {
+  loadNotifications();
+  loadAlertRules();
+}
+
+// ── Historial de notificaciones ──────────────────────────────────────────
+
+async function loadNotifications() {
+  _notifOffset = 0;
+  await fetchNotifications();
+}
+
+function notifPage(dir) {
+  _notifOffset = Math.max(0, _notifOffset + dir * _notifLimit);
+  fetchNotifications();
+}
+
+async function fetchNotifications() {
+  const type = document.getElementById('nf-type').value;
+  const sev = document.getElementById('nf-severity').value;
+  const days = document.getElementById('nf-days').value || 30;
+  let url = `/api/notifications?days=${days}&limit=${_notifLimit}&offset=${_notifOffset}`;
+  if (type) url += `&notif_type=${type}`;
+  if (sev) url += `&severity=${sev}`;
+
+  try {
+    const r = await fetch(url).then(r => r.json());
+    renderNotifStats(r.stats_by_type || {}, r.total || 0);
+    renderNotifTable(r.notifications || []);
+    const total = r.total || 0;
+    document.getElementById('notif-total').textContent = `${total} notificaciones (mostrando ${Math.min(_notifOffset+1, total)}–${Math.min(_notifOffset+_notifLimit, total)})`;
+    document.getElementById('notif-prev').disabled = _notifOffset === 0;
+    document.getElementById('notif-next').disabled = _notifOffset + _notifLimit >= total;
+  } catch(e) {
+    document.getElementById('notif-tbody').innerHTML = `<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:30px">Error cargando notificaciones</td></tr>`;
+  }
+}
+
+const NOTIF_ICONS = { signal:'📡', training:'🏋️', anomaly:'🚨', heartbeat:'💓', error:'❌', summary:'📋', alert_rule:'🔔' };
+
+function renderNotifStats(stats, total) {
+  const el = document.getElementById('notif-stats');
+  let html = `<div class="notif-stat"><div class="ns-val">${total}</div><div class="ns-label">Total</div></div>`;
+  for (const [type, cnt] of Object.entries(stats)) {
+    html += `<div class="notif-stat"><div class="ns-val">${cnt}</div><div class="ns-label">${NOTIF_ICONS[type]||''} ${type}</div></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderNotifTable(items) {
+  const tbody = document.getElementById('notif-tbody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:40px"><div style="font-size:36px;margin-bottom:8px">🔕</div>Sin notificaciones en este período</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(n => {
+    const d = new Date(n.created_at);
+    const dateStr = d.toLocaleDateString('es', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    const icon = NOTIF_ICONS[n.notif_type] || '📨';
+    return `<tr>
+      <td style="white-space:nowrap;font-size:11px">${dateStr}</td>
+      <td><span class="notif-badge ${n.notif_type}">${icon} ${n.notif_type}</span></td>
+      <td><span class="sev-badge ${n.severity}">${n.severity}</span></td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.title || '—'}</td>
+      <td>${n.pair || '—'}</td>
+      <td>${n.delivered ? '✅' : '❌'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Reglas de alerta ─────────────────────────────────────────────────────
+
+const CHECK_LABELS = { signal_drought:'Sequía señales', drawdown:'Drawdown', low_winrate:'Win rate bajo', stale_data:'Datos obsoletos', stale_models:'Modelos obsoletos' };
+const SEV_COLORS = { info:'#8888ff', warning:'#ffa500', high:'#ff5050', critical:'#ff2222' };
+
+async function loadAlertRules() {
+  try {
+    const r = await fetch('/api/alert-rules').then(r => r.json());
+    const rules = r.rules || [];
+    document.getElementById('rules-count').textContent = `${rules.length} regla(s) configuradas`;
+    const list = document.getElementById('rules-list');
+    if (!rules.length) {
+      list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">⚙️</div>Sin reglas configuradas. Crea una para recibir alertas automáticas.</div>';
+      return;
+    }
+    list.innerHTML = rules.map(rule => `
+      <div class="rule-card" data-id="${rule.id}">
+        <button class="rule-toggle ${rule.enabled?'on':''}" onclick="toggleRule('${rule.id}',${!rule.enabled})"></button>
+        <div class="rule-info">
+          <div class="rule-name">${rule.name}</div>
+          <div class="rule-desc">${rule.description || CHECK_LABELS[rule.check_type] || rule.check_type}</div>
+          <div class="rule-meta">
+            <span>🎯 Umbral: <b>${rule.threshold} ${rule.unit}</b></span>
+            <span>💱 Par: <b>${rule.pair || 'Todos'}</b></span>
+            <span style="color:${SEV_COLORS[rule.severity]||'#888'}">⚠️ <b>${rule.severity}</b></span>
+            <span>⏱️ Cooldown: <b>${rule.cooldown_hours}h</b></span>
+          </div>
+        </div>
+        <div class="rule-actions">
+          <button onclick="testRule('${rule.id}',this)" title="Enviar test a Telegram">🔔 Test</button>
+          <button class="del" onclick="deleteRule('${rule.id}')" title="Eliminar">🗑️</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    document.getElementById('rules-list').innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">Error cargando reglas</div>';
+  }
+}
+
+async function toggleRule(id, enabled) {
+  try {
+    await fetch('/api/alert-rules', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, enabled}) });
+    loadAlertRules();
+  } catch(e) { alert('Error actualizando regla'); }
+}
+
+async function testRule(id, btn) {
+  if (!btn) btn = event.target;
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    const r = await fetch(`/api/alert-rules/test/${id}`, {method:'POST'}).then(r=>r.json());
+    btn.textContent = r.ok ? '✅' : '❌';
+    setTimeout(() => { btn.textContent = '🔔 Test'; btn.disabled = false; }, 2000);
+  } catch(e) {
+    btn.textContent = '❌'; setTimeout(() => { btn.textContent = '🔔 Test'; btn.disabled = false; }, 2000);
+  }
+}
+
+async function deleteRule(id) {
+  if (!confirm('¿Eliminar esta regla de alerta?')) return;
+  try {
+    await fetch(`/api/alert-rules/${id}`, {method:'DELETE'});
+    loadAlertRules();
+  } catch(e) { alert('Error eliminando regla'); }
+}
+
+function toggleAddRule() {
+  const form = document.getElementById('add-rule-form');
+  form.classList.toggle('show');
+}
+
+async function saveNewRule() {
+  const name = document.getElementById('ar-name').value.trim();
+  if (!name) { alert('Nombre obligatorio'); return; }
+  const body = {
+    name,
+    check_type: document.getElementById('ar-type').value,
+    pair: document.getElementById('ar-pair').value || null,
+    threshold: parseFloat(document.getElementById('ar-threshold').value),
+    unit: document.getElementById('ar-unit').value,
+    severity: document.getElementById('ar-severity').value,
+    cooldown_hours: parseInt(document.getElementById('ar-cooldown').value),
+  };
+  try {
+    const r = await fetch('/api/alert-rules', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r=>r.json());
+    if (r.ok) {
+      document.getElementById('add-rule-form').classList.remove('show');
+      document.getElementById('ar-name').value = '';
+      loadAlertRules();
+    } else {
+      alert('Error creando regla');
+    }
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────

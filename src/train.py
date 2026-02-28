@@ -28,11 +28,12 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ── Telegram helpers ──────────────────────────────────────────────────────────
 
-def _tg(text: str, silent: bool = False) -> None:
-    """Envía notificación a Telegram (no bloquea si falla)."""
+def _tg(text: str, silent: bool = False, notif_type: str = "training", title: str = "", severity: str = "info") -> None:
+    """Envía notificación a Telegram y loguea (no bloquea si falla)."""
     try:
-        from src.notifications.telegram import send_message
-        send_message(text, silent=silent)
+        from src.notifications.telegram import send_message, log_notification
+        ok = send_message(text, silent=silent)
+        log_notification(notif_type=notif_type, title=title, message=text, severity=severity, delivered=ok)
     except Exception as e:
         logger.debug(f"Telegram notify skip: {e}")
 
@@ -92,6 +93,8 @@ def _tg_model_done(r: TrainResult, completed: int, total: int) -> None:
         f"{icon} <b>{model_upper} {r.pair} {r.timeframe}</b>  [{completed}/{total}]\n"
         f"   {detail}  |  {r.rows} filas  |  {elapsed}",
         silent=True,
+        title=f"{model_upper} {r.pair} {r.timeframe}: {r.status}",
+        severity="warning" if r.status == "error" else "info",
     )
 
 
@@ -128,7 +131,11 @@ def _tg_training_summary(results: list["TrainResult"], total_time: float) -> Non
             model_name = r.model.upper().replace("XGB", "XGBoost")
             lines.append(f"   {model_name} {r.pair} {r.timeframe}: {r.error_msg}")
 
-    _tg("\n".join(lines))
+    _tg(
+        "\n".join(lines),
+        title=f"Training finalizado: {len(ok)} OK, {len(errors)} errores",
+        severity="high" if errors else "info",
+    )
 
 
 def _print_summary(results: list[TrainResult]) -> None:
@@ -273,6 +280,7 @@ def main() -> None:
         f"🔢 Total: <b>{n_combos} entrenamientos</b>\n"
         f"{'🔍 Optuna: ' + str(args.trials) + ' trials' if args.optimize else ''}",
         silent=True,
+        title=f"Training iniciado: {n_combos} modelos",
     )
     completed = 0
 

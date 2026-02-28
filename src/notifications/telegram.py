@@ -13,6 +13,7 @@ Tipos de mensaje:
   - send_heartbeat()   → "sigo vivo" cada N horas
 """
 
+import json
 import os
 import time
 import requests
@@ -21,11 +22,13 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from loguru import logger
+from sqlalchemy import create_engine, text
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
+BOT_TOKEN     = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID       = os.getenv("TELEGRAM_CHAT_ID")
+DATABASE_URL  = os.getenv("DATABASE_URL")
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
@@ -50,6 +53,74 @@ PAIR_EMOJI = {
     "EURJPY": "🌍",
     "XAUUSD": "🥇",
 }
+
+
+# ── Logging de notificaciones a BD ────────────────────────────────────────
+
+_table_ensured = False
+
+def _ensure_log_table():
+    """Crea la tabla notification_log si no existe (una sola vez por ejecución)."""
+    global _table_ensured
+    if _table_ensured or not DATABASE_URL:
+        return
+    try:
+        engine = create_engine(DATABASE_URL)
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS notification_log (
+                    id          BIGSERIAL       PRIMARY KEY,
+                    created_at  TIMESTAMPTZ     DEFAULT NOW(),
+                    notif_type  VARCHAR(30)     NOT NULL,
+                    severity    VARCHAR(10)     DEFAULT 'info',
+                    title       VARCHAR(200),
+                    message     TEXT,
+                    pair        VARCHAR(10),
+                    timeframe   VARCHAR(5),
+                    delivered   BOOLEAN         DEFAULT TRUE,
+                    metadata    JSONB
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_notif_created ON notification_log (created_at DESC)"))
+            conn.commit()
+        _table_ensured = True
+    except Exception as e:
+        logger.debug(f"notification_log table ensure skip: {e}")
+
+
+def log_notification(
+    notif_type: str,
+    message: str,
+    title: str = "",
+    severity: str = "info",
+    pair: str = None,
+    timeframe: str = None,
+    delivered: bool = True,
+    metadata: dict = None,
+) -> None:
+    """Guarda una notificación enviada en la BD."""
+    if not DATABASE_URL:
+        return
+    _ensure_log_table()
+    try:
+        engine = create_engine(DATABASE_URL)
+        with engine.connect() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO notification_log (notif_type, severity, title, message, pair, timeframe, delivered, metadata)
+                    VALUES (:t, :s, :title, :msg, :pair, :tf, :delivered, :meta)
+                """),
+                {
+                    "t": notif_type, "s": severity, "title": title,
+                    "msg": message[:4000],  # limitar tamaño
+                    "pair": pair, "tf": timeframe,
+                    "delivered": delivered,
+                    "meta": json.dumps(metadata) if metadata else None,
+                },
+            )
+            conn.commit()
+    except Exception as e:
+        logger.debug(f"notification_log insert skip: {e}")
 
 
 # ── Cliente HTTP básico ───────────────────────────────────────────────────────
@@ -124,7 +195,15 @@ def send_signal(signal) -> bool:
         f"<i>⚠️ No es asesoramiento financiero.</i>"
     )
     logger.info(f"Enviando señal Telegram: {signal.pair} {signal.timeframe} {label}")
-    return send_message(text)
+    ok = send_message(text)
+    log_notification(
+        notif_type="signal", severity="info",
+        title=f"{label} {signal.pair} {signal.timeframe}",
+        message=text, pair=signal.pair, timeframe=signal.timeframe,
+        delivered=ok,
+        metadata={"confidence": signal.confidence, "rr": signal.rr_ratio, "direction": d},
+    )
+    return ok
 
 
 def send_summary(signals: list, period: str = "última hora") -> bool:
@@ -133,10 +212,10 @@ def send_summary(signals: list, period: str = "última hora") -> bool:
     signals: lista de SignalResult
     """
     if not signals:
-        return send_message(
-            f"📋 <b>Resumen señales — {period}</b>\n\nSin señales válidas en este período.",
-            silent=True,
-        )
+        msg = f"📋 <b>Resumen señales — {period}</b>\n\nSin señales válidas en este período."
+        ok = send_message(msg, silent=True)
+        log_notification(notif_type="summary", title=f"Resumen {period}", message=msg, delivered=ok)
+        return ok
 
     lines = [f"📋 <b>Resumen señales — {period}</b>\n"]
     for s in signals:
@@ -148,20 +227,25 @@ def send_summary(signals: list, period: str = "última hora") -> bool:
         )
 
     lines.append(f"\n<i>Total señales: {len(signals)}</i>")
-    return send_message("\n".join(lines), silent=True)
+    msg = "\n".join(lines)
+    ok = send_message(msg, silent=True)
+    log_notification(notif_type="summary", title=f"Resumen {period} ({len(signals)} señales)", message=msg, delivered=ok)
+    return ok
 
 
 def send_error(error: str, context: Optional[str] = None) -> bool:
     """Alerta de error crítico del sistema."""
     ts = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
-    text = (
+    msg = (
         f"🚨 <b>ERROR — ML-Ayram</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🕐 {ts}\n"
         f"📍 <b>Contexto:</b> {context or 'desconocido'}\n\n"
-        f"<code>{error[:1000]}</code>"   # limitar longitud
+        f"<code>{error[:1000]}</code>"
     )
-    return send_message(text)
+    ok = send_message(msg)
+    log_notification(notif_type="error", severity="critical", title=f"Error: {context or 'sistema'}", message=msg, delivered=ok)
+    return ok
 
 
 def send_heartbeat(stats: Optional[dict] = None) -> bool:
@@ -183,7 +267,10 @@ def send_heartbeat(stats: Optional[dict] = None) -> bool:
         if "last_signal_at" in stats:
             lines.append(f"⏱ Última señal: {stats['last_signal_at']}")
 
-    return send_message("\n".join(lines), silent=True)
+    msg = "\n".join(lines)
+    ok = send_message(msg, silent=True)
+    log_notification(notif_type="heartbeat", title="Heartbeat", message=msg, delivered=ok, metadata=stats)
+    return ok
 
 
 # ── Test de conexión ──────────────────────────────────────────────────────────

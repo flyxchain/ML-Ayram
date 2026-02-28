@@ -173,9 +173,28 @@ GROUP BY pair, mode
 ORDER BY total_usd DESC;
 
 -- ============================================================
+-- TABLA 6: Log de notificaciones enviadas
+-- ============================================================
+CREATE TABLE IF NOT EXISTS notification_log (
+    id              BIGSERIAL       PRIMARY KEY,
+    created_at      TIMESTAMPTZ     DEFAULT NOW(),
+    notif_type      VARCHAR(30)     NOT NULL,    -- 'signal', 'training', 'anomaly', 'heartbeat', 'error', 'summary', 'alert_rule'
+    severity        VARCHAR(10)     DEFAULT 'info',  -- 'info', 'warning', 'high', 'critical'
+    title           VARCHAR(200),
+    message         TEXT,
+    pair            VARCHAR(10),
+    timeframe       VARCHAR(5),
+    delivered       BOOLEAN         DEFAULT TRUE,
+    metadata        JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_notif_type ON notification_log (notif_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notif_created ON notification_log (created_at DESC);
+
+-- ============================================================
 -- Mensaje de confirmación
 -- ============================================================
-DO $$
+DO $
 BEGIN
-    RAISE NOTICE 'Schema ML-Ayram creado correctamente. Tablas: ohlcv_raw, features_computed, signals_log, model_performance, positions_active';
-END $$;
+    RAISE NOTICE 'Schema ML-Ayram creado correctamente. Tablas: ohlcv_raw, features_computed, signals_log, model_performance, positions_active, notification_log';
+END $;

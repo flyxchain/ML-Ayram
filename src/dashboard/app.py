@@ -1226,6 +1226,237 @@ def get_doc(filename: str):
     return {"filename": filename, "name": filepath.stem, "content": content}
 
 
+# ── /api/notifications ─ Historial de notificaciones ────────────────────
+
+ALERT_RULES_PATH = Path("config/alert_rules.json")
+
+@app.get("/api/notifications")
+def get_notifications(
+    notif_type: Optional[str] = None,
+    severity: Optional[str] = None,
+    days: int = Query(default=30, ge=1, le=365),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    """Historial de notificaciones enviadas."""
+    engine = create_engine(DATABASE_URL)
+    # Asegurar que la tabla existe
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS notification_log (
+                    id          BIGSERIAL       PRIMARY KEY,
+                    created_at  TIMESTAMPTZ     DEFAULT NOW(),
+                    notif_type  VARCHAR(30)     NOT NULL,
+                    severity    VARCHAR(10)     DEFAULT 'info',
+                    title       VARCHAR(200),
+                    message     TEXT,
+                    pair        VARCHAR(10),
+                    timeframe   VARCHAR(5),
+                    delivered   BOOLEAN         DEFAULT TRUE,
+                    metadata    JSONB
+                )
+            """))
+            conn.commit()
+    except Exception:
+        pass
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    conditions = ["created_at >= :cutoff"]
+    params = {"cutoff": cutoff, "lim": limit, "off": offset}
+
+    if notif_type:
+        conditions.append("notif_type = :ntype")
+        params["ntype"] = notif_type
+    if severity:
+        conditions.append("severity = :sev")
+        params["sev"] = severity
+
+    where = " AND ".join(conditions)
+
+    try:
+        df = pd.read_sql(
+            text(f"""
+                SELECT id, created_at, notif_type, severity, title, pair, timeframe, delivered, metadata
+                FROM notification_log
+                WHERE {where}
+                ORDER BY created_at DESC
+                LIMIT :lim OFFSET :off
+            """),
+            engine, params=params,
+        )
+        # Contar total
+        with engine.connect() as conn:
+            total = conn.execute(
+                text(f"SELECT COUNT(*) FROM notification_log WHERE {where}"),
+                {k: v for k, v in params.items() if k not in ("lim", "off")},
+            ).scalar()
+
+        # Stats por tipo
+        stats_df = pd.read_sql(
+            text(f"""
+                SELECT notif_type, COUNT(*) as cnt
+                FROM notification_log WHERE {where}
+                GROUP BY notif_type ORDER BY cnt DESC
+            """),
+            engine,
+            params={k: v for k, v in params.items() if k not in ("lim", "off")},
+        )
+
+        records = []
+        for _, row in df.iterrows():
+            r = {
+                "id": int(row["id"]),
+                "created_at": row["created_at"].isoformat() if pd.notna(row["created_at"]) else None,
+                "notif_type": row["notif_type"],
+                "severity": row["severity"],
+                "title": row["title"],
+                "pair": row["pair"],
+                "timeframe": row["timeframe"],
+                "delivered": bool(row["delivered"]),
+                "metadata": row["metadata"] if pd.notna(row.get("metadata")) else None,
+            }
+            records.append(r)
+
+        return {
+            "notifications": records,
+            "total": int(total),
+            "stats_by_type": {row["notif_type"]: int(row["cnt"]) for _, row in stats_df.iterrows()},
+        }
+    except Exception as e:
+        return {"notifications": [], "total": 0, "stats_by_type": {}, "error": str(e)}
+
+
+# ── /api/alert-rules ─ Reglas configurables ──────────────────────
+
+@app.get("/api/alert-rules")
+def get_alert_rules():
+    """Devuelve las reglas de alerta configuradas."""
+    if not ALERT_RULES_PATH.exists():
+        return {"rules": []}
+    data = json.loads(ALERT_RULES_PATH.read_text(encoding="utf-8"))
+    return {"rules": data.get("rules", [])}
+
+
+class AlertRuleUpdate(BaseModel):
+    id: str
+    enabled: Optional[bool] = None
+    threshold: Optional[float] = None
+    severity: Optional[str] = None
+    cooldown_hours: Optional[int] = None
+
+
+class AlertRuleCreate(BaseModel):
+    name: str
+    check_type: str       # signal_drought | drawdown | low_winrate | stale_data | stale_models
+    pair: Optional[str] = None
+    timeframe: Optional[str] = None
+    threshold: float
+    unit: str             # days | percent | hours
+    severity: str = "warning"
+    cooldown_hours: int = 24
+
+
+@app.put("/api/alert-rules")
+def update_alert_rule(update: AlertRuleUpdate):
+    """Actualiza una regla existente (toggle, umbral, severidad)."""
+    if not ALERT_RULES_PATH.exists():
+        raise HTTPException(404, "Config no encontrada")
+    data = json.loads(ALERT_RULES_PATH.read_text(encoding="utf-8"))
+    found = False
+    for rule in data.get("rules", []):
+        if rule["id"] == update.id:
+            if update.enabled is not None:
+                rule["enabled"] = update.enabled
+            if update.threshold is not None:
+                rule["threshold"] = update.threshold
+            if update.severity is not None:
+                rule["severity"] = update.severity
+            if update.cooldown_hours is not None:
+                rule["cooldown_hours"] = update.cooldown_hours
+            found = True
+            break
+    if not found:
+        raise HTTPException(404, f"Regla {update.id} no encontrada")
+    ALERT_RULES_PATH.write_text(json.dumps(data, indent=4, ensure_ascii=False), encoding="utf-8")
+    return {"ok": True, "rule": next(r for r in data["rules"] if r["id"] == update.id)}
+
+
+@app.post("/api/alert-rules")
+def create_alert_rule(rule: AlertRuleCreate):
+    """Crea una nueva regla de alerta."""
+    if not ALERT_RULES_PATH.exists():
+        data = {"rules": [], "last_fired": {}}
+    else:
+        data = json.loads(ALERT_RULES_PATH.read_text(encoding="utf-8"))
+
+    # Generar ID
+    rule_id = f"{rule.check_type}_{rule.pair or 'all'}_{len(data['rules'])+1}"
+    new_rule = {
+        "id": rule_id,
+        "enabled": True,
+        "name": rule.name,
+        "description": "",
+        "check_type": rule.check_type,
+        "pair": rule.pair,
+        "timeframe": rule.timeframe,
+        "threshold": rule.threshold,
+        "unit": rule.unit,
+        "severity": rule.severity,
+        "cooldown_hours": rule.cooldown_hours,
+    }
+    data["rules"].append(new_rule)
+    ALERT_RULES_PATH.write_text(json.dumps(data, indent=4, ensure_ascii=False), encoding="utf-8")
+    return {"ok": True, "rule": new_rule}
+
+
+@app.delete("/api/alert-rules/{rule_id}")
+def delete_alert_rule(rule_id: str):
+    """Elimina una regla de alerta."""
+    if not ALERT_RULES_PATH.exists():
+        raise HTTPException(404, "Config no encontrada")
+    data = json.loads(ALERT_RULES_PATH.read_text(encoding="utf-8"))
+    original_len = len(data.get("rules", []))
+    data["rules"] = [r for r in data.get("rules", []) if r["id"] != rule_id]
+    if len(data["rules"]) == original_len:
+        raise HTTPException(404, f"Regla {rule_id} no encontrada")
+    ALERT_RULES_PATH.write_text(json.dumps(data, indent=4, ensure_ascii=False), encoding="utf-8")
+    return {"ok": True}
+
+
+@app.post("/api/alert-rules/test/{rule_id}")
+def test_alert_rule(rule_id: str):
+    """Envía un mensaje de prueba a Telegram para una regla."""
+    if not ALERT_RULES_PATH.exists():
+        raise HTTPException(404, "Config no encontrada")
+    data = json.loads(ALERT_RULES_PATH.read_text(encoding="utf-8"))
+    rule = next((r for r in data.get("rules", []) if r["id"] == rule_id), None)
+    if not rule:
+        raise HTTPException(404, f"Regla {rule_id} no encontrada")
+    try:
+        from src.notifications.telegram import send_message, log_notification
+        msg = (
+            f"🔔 <b>Test de regla de alerta</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📌 <b>{rule['name']}</b>\n"
+            f"🛠️ Tipo: {rule['check_type']}\n"
+            f"🎯 Umbral: {rule['threshold']} {rule['unit']}\n"
+            f"💱 Par: {rule.get('pair') or 'Todos'}\n"
+            f"\n<i>Este es un mensaje de prueba.</i>"
+        )
+        ok = send_message(msg)
+        if ok:
+            log_notification(
+                notif_type="alert_rule", severity="info",
+                title=f"Test: {rule['name']}", message=msg,
+                pair=rule.get("pair"), delivered=True,
+                metadata={"rule_id": rule_id, "test": True},
+            )
+        return {"ok": ok, "message": "Notificación enviada" if ok else "Fallo al enviar"}
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+
+
 # ── /api/config ───────────────────────────────────────────────────────────────
 
 @app.get("/api/config")

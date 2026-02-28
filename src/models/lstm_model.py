@@ -144,7 +144,26 @@ def load_dataset(pair: str, timeframe: str):
         raise ValueError(f"Sin datos etiquetados para {pair} {timeframe}")
 
     available = [c for c in FEATURE_COLS if c in df.columns]
-    X = df[available].fillna(df[available].median()).values.astype(np.float32)
+    sub = df[available].copy()
+
+    # Rellenar NaN con mediana de cada columna
+    medians = sub.median()
+    sub = sub.fillna(medians)
+    sub = sub.infer_objects(copy=False)
+
+    # Eliminar columnas que siguen con NaN (todas eran NaN) o varianza cero
+    all_nan_cols = sub.columns[sub.isna().all()].tolist()
+    zero_var_cols = sub.columns[sub.std() == 0].tolist()
+    drop_cols = list(set(all_nan_cols + zero_var_cols))
+    if drop_cols:
+        logger.warning(f"Descartando {len(drop_cols)} features sin varianza: {drop_cols}")
+        sub = sub.drop(columns=drop_cols)
+        available = [c for c in available if c not in drop_cols]
+
+    # Rellenar cualquier NaN residual con 0
+    sub = sub.fillna(0)
+
+    X = sub.values.astype(np.float32)
     y = df["label"].map(LABEL_MAP).values.astype(np.int64)
 
     logger.info(f"Dataset {pair} {timeframe}: {len(X)} filas, {len(available)} features")
@@ -336,7 +355,9 @@ def predict(
     Requiere al menos seq_len filas.
     """
     available = [c for c in feature_cols if c in df.columns]
-    X = df[available].fillna(df[available].median()).values.astype(np.float32)
+    sub = df[available].copy()
+    sub = sub.fillna(sub.median()).infer_objects(copy=False).fillna(0)
+    X = sub.values.astype(np.float32)
     X = scaler.transform(X)
 
     windows = _build_windows(X, seq_len)  # (N-seq_len, seq_len, n_features)
@@ -367,7 +388,9 @@ def predict_proba(
     Columnas: prob_short, prob_neutral, prob_long
     """
     available = [c for c in feature_cols if c in df.columns]
-    X = df[available].fillna(df[available].median()).values.astype(np.float32)
+    sub = df[available].copy()
+    sub = sub.fillna(sub.median()).infer_objects(copy=False).fillna(0)
+    X = sub.values.astype(np.float32)
     X = scaler.transform(X)
 
     windows = _build_windows(X, seq_len)  # (N-seq_len, seq_len, n_features)

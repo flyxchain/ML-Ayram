@@ -162,6 +162,7 @@ CREATE INDEX IF NOT EXISTS idx_trades_closed ON trades_history (closed_at DESC);
 def init_db() -> None:
     engine = create_engine(DATABASE_URL)
     with engine.connect() as conn:
+        conn.execute(text("SET statement_timeout = 0"))  # índices pueden tardar
         for statement in SCHEMA.split(";"):
             stmt = statement.strip()
             if stmt:

@@ -167,6 +167,14 @@ def mock_db(monkeypatch):
         if "from signals where" in sql_lower and "limit" in sql_lower:
             return signals_df.head(params.get("limit", 50) if params else 50).copy()
 
+        # /api/monitor — ohlcv (check BEFORE chart, both match "from ohlcv_raw")
+        if "from ohlcv_raw" in sql_lower and "group by pair" in sql_lower:
+            return _mock_monitor_df("ohlcv")
+
+        # /api/monitor — features
+        if "from features_computed" in sql_lower and "group by pair" in sql_lower:
+            return _mock_monitor_df("features")
+
         # /api/chart — OHLCV
         if "from ohlcv_raw" in sql_lower and "pair" in sql_lower:
             return ohlcv_df.copy()
@@ -184,14 +192,6 @@ def mock_db(monkeypatch):
         # /api/performance
         if "from trades_history" in sql_lower:
             return trades_df.copy()
-
-        # /api/monitor — ohlcv
-        if "from ohlcv_raw" in sql_lower and "group by pair" in sql_lower:
-            return _mock_monitor_df("ohlcv")
-
-        # /api/monitor — features
-        if "from features_computed" in sql_lower and "group by pair" in sql_lower:
-            return _mock_monitor_df("features")
 
         # /api/positions
         if "from positions_active" in sql_lower:

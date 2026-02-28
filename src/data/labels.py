@@ -145,8 +145,9 @@ def run_labeling(
     horizon: int = DEFAULT_H,
 ) -> None:
     """
-    Etiqueta todas las filas de features_computed que aún no tienen label.
-    Usa un bulk UPDATE con tabla temporal para máxima eficiencia.
+    Etiqueta filas de features_computed que aún no tienen label.
+    Modo incremental: solo procesa filas con label IS NULL.
+    Updates directos en batches pequeños (óptimo para Supabase remoto).
     """
     engine = create_engine(DATABASE_URL)
 
@@ -157,9 +158,25 @@ def run_labeling(
         for tf in timeframes:
             logger.info(f"Etiquetando {pair} {tf}  TP={tp}×ATR  SL={sl}×ATR  H={horizon}")
 
+            # Contar filas sin etiquetar
+            with engine.connect() as conn:
+                pending = conn.execute(
+                    text("SELECT COUNT(*) FROM features_computed WHERE pair = :p AND timeframe = :tf AND label IS NULL"),
+                    {"p": pair, "tf": tf},
+                ).scalar()
+
+            if pending == 0:
+                logger.info(f"  Sin filas pendientes para {pair} {tf}")
+                continue
+
+            logger.info(f"  {pending} filas pendientes de etiquetar")
+
+            # Cargar TODO el par/tf (necesitamos lookforward para Triple Barrier)
+            # pero solo actualizaremos las filas sin label
             df = pd.read_sql(
                 text("""
-                    SELECT fc.*, r.open, r.high, r.low, r.close
+                    SELECT fc.pair, fc.timeframe, fc.timestamp, fc.atr_14, fc.label,
+                           r.open, r.high, r.low, r.close
                     FROM features_computed fc
                     JOIN ohlcv_raw r
                       ON r.pair = fc.pair
@@ -180,9 +197,18 @@ def run_labeling(
                 logger.warning(f"  Columna atr_14 no encontrada para {pair} {tf}")
                 continue
 
+            # Recordar cuáles no tenían label antes del cálculo
+            unlabeled_mask = df["label"].isna()
+
             df = compute_triple_barrier(df, tp, sl, horizon)
 
-            stats = label_stats(df)
+            # Solo las filas que eran NULL
+            new_labels = df[unlabeled_mask].copy()
+            if new_labels.empty:
+                logger.info(f"  Nada nuevo que etiquetar para {pair} {tf}")
+                continue
+
+            stats = label_stats(new_labels)
             logger.info(
                 f"  +1: {stats['label_1_pct']}%  "
                 f"0: {stats['label_0_pct']}%  "
@@ -190,61 +216,45 @@ def run_labeling(
                 f"Avg win: {stats['avg_return_win']}%"
             )
 
-            # ── Bulk UPDATE vía tabla temporal ────────────────────────────
-            # Mucho más rápido que N UPDATEs individuales:
-            # 1. Crear tabla temporal con los valores nuevos
-            # 2. Un solo UPDATE features_computed JOIN tmp
-            cols = ["pair", "timeframe", "timestamp",
-                    "label", "label_return", "bars_to_exit", "tp_price", "sl_price"]
-            update_df = df[cols].copy()
-            update_df["timestamp"] = update_df["timestamp"].astype(str)
+            # ── Updates directos en batches pequeños ──────────────────────
+            update_sql = text("""
+                UPDATE features_computed
+                SET label        = :label,
+                    label_return = :label_return,
+                    bars_to_exit = :bars_to_exit,
+                    tp_price     = :tp_price,
+                    sl_price     = :sl_price
+                WHERE pair = :pair AND timeframe = :timeframe AND timestamp = :timestamp
+            """)
 
-            with engine.connect() as conn:
-                # Escribir en tabla temporal (se borra al cerrar conexión)
-                conn.execute(text("""
-                    CREATE TEMP TABLE IF NOT EXISTS _label_update (
-                        pair        TEXT,
-                        timeframe   TEXT,
-                        timestamp   TIMESTAMPTZ,
-                        label       SMALLINT,
-                        label_return REAL,
-                        bars_to_exit SMALLINT,
-                        tp_price    REAL,
-                        sl_price    REAL
-                    ) ON COMMIT DROP
-                """))
+            records = new_labels[["pair", "timeframe", "timestamp",
+                                  "label", "label_return", "bars_to_exit",
+                                  "tp_price", "sl_price"]].copy()
+            records["timestamp"] = records["timestamp"].astype(str)
 
-                # Insertar en lotes de 5000 para no saturar memoria
-                batch_size = 5_000
-                for start in range(0, len(update_df), batch_size):
-                    batch = update_df.iloc[start : start + batch_size]
-                    conn.execute(
-                        text("""
-                            INSERT INTO _label_update
-                            VALUES (:pair, :timeframe, :timestamp,
-                                    :label, :label_return, :bars_to_exit,
-                                    :tp_price, :sl_price)
-                        """),
-                        batch.to_dict("records"),
-                    )
+            # Convertir tipos numpy a Python nativos
+            rows = records.to_dict("records")
+            for row in rows:
+                for k, v in row.items():
+                    if isinstance(v, (np.integer,)):
+                        row[k] = int(v)
+                    elif isinstance(v, (np.floating,)):
+                        row[k] = float(v) if not np.isnan(v) else None
 
-                # Un solo UPDATE masivo
-                conn.execute(text("""
-                    UPDATE features_computed fc
-                    SET
-                        label        = u.label,
-                        label_return = u.label_return,
-                        bars_to_exit = u.bars_to_exit,
-                        tp_price     = u.tp_price,
-                        sl_price     = u.sl_price
-                    FROM _label_update u
-                    WHERE fc.pair      = u.pair
-                      AND fc.timeframe = u.timeframe
-                      AND fc.timestamp = u.timestamp
-                """))
-                conn.commit()
+            batch_size = 200
+            total_rows = len(rows)
+            updated = 0
 
-            logger.success(f"  ✅ {pair} {tf}: {len(df)} filas etiquetadas")
+            for start in range(0, total_rows, batch_size):
+                batch = rows[start : start + batch_size]
+                with engine.connect() as conn:
+                    conn.execute(update_sql, batch)
+                    conn.commit()
+                updated += len(batch)
+                if total_rows > batch_size:
+                    logger.info(f"    Progreso: {updated}/{total_rows} ({updated*100//total_rows}%)")
+
+            logger.success(f"  ✅ {pair} {tf}: {updated} filas etiquetadas")
 
 
 if __name__ == "__main__":

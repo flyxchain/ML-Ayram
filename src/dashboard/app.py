@@ -117,14 +117,9 @@ def get_status():
 
         open_positions = 0
         if _table_exists("positions_active"):
-            try:
-                open_positions = int(
-                    _query("SELECT COUNT(*) AS n FROM positions_active WHERE status = 'open'").iloc[0]["n"]
-                )
-            except Exception:
-                open_positions = int(
-                    _query("SELECT COUNT(*) AS n FROM positions_active").iloc[0]["n"]
-                )
+            open_positions = int(
+                _query("SELECT COUNT(*) AS n FROM positions_active").iloc[0]["n"]
+            )
 
         return {
             "status":          "online",
@@ -403,47 +398,53 @@ def get_performance(
 
 @app.get("/api/positions")
 def get_open_positions():
-    """Posiciones abiertas actualmente."""
+    """Posiciones abiertas actualmente.
+
+    Esquema real de positions_active:
+      id, signal_id, opened_at, pair, direction, lot_size, entry_price,
+      current_sl, tp1_price, tp2_price, tp1_hit,
+      ctrader_order_id, ctrader_position_id
+    """
     try:
         if not _table_exists("positions_active"):
             return []
 
-        # Detectar si la tabla tiene columna 'status'
-        cols = _query(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'positions_active'"
-        )["column_name"].tolist()
-
-        if "status" in cols:
-            df = _query("SELECT * FROM positions_active WHERE status = 'open' ORDER BY opened_at DESC")
-        else:
-            df = _query("SELECT * FROM positions_active ORDER BY opened_at DESC")
-
+        df = _query("SELECT * FROM positions_active ORDER BY opened_at DESC")
         if df.empty:
             return []
 
         df["opened_at"] = df["opened_at"].astype(str)
 
-        # Calcular PnL flotante aproximado desde features_computed
+        pip_sizes = {"EURUSD":0.0001,"GBPUSD":0.0001,"USDJPY":0.01,"EURJPY":0.01,"XAUUSD":0.10}
+        pip_vals  = {"EURUSD":10.0,"GBPUSD":10.0,"USDJPY":9.1,"EURJPY":9.1,"XAUUSD":10.0}
+
         rows = df.to_dict(orient="records")
         for row in rows:
+            # Mapear columnas reales a lo que espera el frontend
+            row["tp_price"] = row.get("tp1_price")
+            row["sl_price"] = row.get("current_sl")
+            row["timeframe"] = "—"  # No existe en la tabla
+            row["risk_amount"] = None
+
+            # PnL flotante desde último close en ohlcv_raw (H1)
             try:
                 last = _query(
-                    """SELECT close FROM features_computed
-                       WHERE pair = :pair AND timeframe = :tf
+                    """SELECT close FROM ohlcv_raw
+                       WHERE pair = :pair AND timeframe = 'H1'
                        ORDER BY timestamp DESC LIMIT 1""",
-                    {"pair": row["pair"], "tf": row["timeframe"]},
+                    {"pair": row["pair"]},
                 )
                 if not last.empty:
                     current = float(last.iloc[0]["close"])
-                    pip_sizes = {"EURUSD":0.0001,"GBPUSD":0.0001,"USDJPY":0.01,"EURJPY":0.01,"XAUUSD":0.10}
-                    pip_vals  = {"EURUSD":10.0,"GBPUSD":10.0,"USDJPY":9.1,"EURJPY":9.1,"XAUUSD":10.0}
                     ps  = pip_sizes.get(row["pair"], 0.0001)
                     pv  = pip_vals.get(row["pair"], 10.0)
                     direction = int(row["direction"])
-                    pnl_pips  = (current - row["entry_price"]) / ps * direction
-                    row["floating_pnl"] = round(pnl_pips * pv * row["lot_size"], 2)
+                    pnl_pips  = (current - float(row["entry_price"])) / ps * direction
+                    row["floating_pnl"] = round(pnl_pips * pv * float(row["lot_size"]), 2)
                     row["current_price"] = round(current, 5)
+                else:
+                    row["floating_pnl"]  = None
+                    row["current_price"] = None
             except Exception:
                 row["floating_pnl"]  = None
                 row["current_price"] = None

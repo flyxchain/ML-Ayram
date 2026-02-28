@@ -12,6 +12,10 @@ Endpoints:
   GET  /api/performance           → rendimiento real de trades cerrados
   GET  /api/positions             → posiciones abiertas actualmente
   GET  /api/monitor               → estado de frescura de datos (monitor)
+  GET  /api/health                → salud de modelos (model_health)
+  GET  /api/anomalies             → alertas anomalías (anomaly_detector)
+  GET  /api/summary               → resumen mensual IA
+  GET  /api/services              → estado de servicios systemd
   GET  /api/config                → configuración actual de filtros
   POST /api/config                → actualizar filtros del generador
 
@@ -22,6 +26,8 @@ Arranque:
 import json
 import math
 import os
+import glob
+import subprocess
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -61,8 +67,9 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 STATIC_DIR   = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
+RESULTS_DIR  = Path(__file__).resolve().parent.parent.parent / "results"
 
-app    = FastAPI(title="ML-Ayram Dashboard", version="1.0.0")
+app    = FastAPI(title="ML-Ayram Dashboard", version="2.0.0")
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 
@@ -81,7 +88,7 @@ class FilterConfig(BaseModel):
 _current_config = FilterConfig()
 
 
-# ── Helper BD ─────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _query(sql: str, params: dict = None) -> pd.DataFrame:
     with engine.connect() as conn:
@@ -90,7 +97,7 @@ def _query(sql: str, params: dict = None) -> pd.DataFrame:
 
 def _safe_json(data):
     """Devuelve JSONResponse limpiando NaN/Inf → null."""
-    clean = json.loads(json.dumps(data, cls=NaNSafeEncoder))
+    clean = json.loads(json.dumps(data, cls=NaNSafeEncoder, default=str))
     return JSONResponse(content=clean)
 
 
@@ -100,6 +107,33 @@ def _table_exists(table: str) -> bool:
         {"t": table},
     )
     return bool(result.iloc[0, 0])
+
+
+def _latest_result_file(prefix: str) -> Optional[dict]:
+    """Lee el JSON más reciente de results/ con el prefijo dado."""
+    pattern = str(RESULTS_DIR / f"{prefix}*.json")
+    files = sorted(glob.glob(pattern), reverse=True)
+    if not files:
+        return None
+    try:
+        with open(files[0], "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error leyendo {files[0]}: {e}")
+        return None
+
+
+def _latest_result_meta(prefix: str) -> dict:
+    """Devuelve metadatos del último fichero result (nombre, fecha mod)."""
+    pattern = str(RESULTS_DIR / f"{prefix}*.json")
+    files = sorted(glob.glob(pattern), reverse=True)
+    if not files:
+        return {"file": None, "modified": None}
+    p = Path(files[0])
+    return {
+        "file": p.name,
+        "modified": datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat(),
+    }
 
 
 # ── /api/status ───────────────────────────────────────────────────────────────
@@ -121,13 +155,19 @@ def get_status():
                 _query("SELECT COUNT(*) AS n FROM positions_active").iloc[0]["n"]
             )
 
+        # Estado rápido de anomalías
+        anomaly_meta = _latest_result_meta("anomalies_")
+        health_meta  = _latest_result_meta("health_")
+
         return {
-            "status":          "online",
-            "total_signals":   total_signals,
-            "total_bars":      total_bars,
-            "open_positions":  open_positions,
-            "last_signal_at":  last_ts,
-            "server_time":     datetime.now(timezone.utc).isoformat(),
+            "status":           "online",
+            "total_signals":    total_signals,
+            "total_bars":       total_bars,
+            "open_positions":   open_positions,
+            "last_signal_at":   last_ts,
+            "last_anomaly_check": anomaly_meta["modified"],
+            "last_health_check":  health_meta["modified"],
+            "server_time":      datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         logger.error(f"/api/status error: {e}")
@@ -212,18 +252,15 @@ def get_chart_data(
         if df.empty:
             raise HTTPException(404, f"Sin datos para {pair} {timeframe}")
 
-        # Eliminar velas con NaN en OHLCV (lightweight-charts no acepta null)
         df = df.dropna(subset=["open", "high", "low", "close"])
         if df.empty:
             raise HTTPException(404, f"Sin datos válidos para {pair} {timeframe}")
 
-        # Guardar rango de timestamps ANTES de convertir a epoch
         min_ts_str = str(df["timestamp"].min())
         df["timestamp"] = (
             pd.to_datetime(df["timestamp"]).astype("int64") // 10**9
         )
 
-        # Señales en ese rango temporal
         signals = _query(
             """SELECT timestamp, direction, entry_price, tp_price, sl_price, confidence
                FROM signals
@@ -285,7 +322,6 @@ def get_metrics(
         longs  = int((df["direction"] ==  1).sum())
         shorts = int((df["direction"] == -1).sum())
 
-        # Señales por día (últimos 30)
         df["date"] = pd.to_datetime(df["timestamp"]).dt.date.astype(str)
         by_day = df.groupby("date").size().reset_index(name="count").tail(30).to_dict(orient="records")
 
@@ -344,24 +380,20 @@ def get_performance(
         win_rate  = round(len(wins) / total * 100, 1)
         total_pnl = round(float(df["pnl"].sum()), 2)
 
-        # Profit factor: suma ganancias / suma pérdidas absolutas
         gross_profit = float(wins["pnl"].sum())   if not wins.empty   else 0.0
         gross_loss   = abs(float(losses["pnl"].sum())) if not losses.empty else 0.0
         profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else float("inf")
 
-        # Equity curve diaria
         df["date"] = pd.to_datetime(df["closed_at"]).dt.date.astype(str)
         daily_pnl  = df.groupby("date")["pnl"].sum().reset_index(name="pnl")
         daily_pnl["cumulative"] = daily_pnl["pnl"].cumsum().round(2)
         equity_curve = daily_pnl.to_dict(orient="records")
 
-        # Max drawdown
         cumulative   = daily_pnl["cumulative"].values
         running_max  = np.maximum.accumulate(cumulative)
         drawdown     = cumulative - running_max
         max_drawdown = round(float(drawdown.min()), 2)
 
-        # Por par
         by_pair = (
             df.groupby("pair")
             .agg(trades=("pnl","count"), pnl=("pnl","sum"), win_rate=("result", lambda x: (x=="tp_hit").mean()*100))
@@ -370,7 +402,6 @@ def get_performance(
             .to_dict(orient="records")
         )
 
-        # Últimos 10 trades
         recent = df.head(10).copy()
         recent["opened_at"] = recent["opened_at"].astype(str)
         recent["closed_at"] = recent["closed_at"].astype(str)
@@ -403,13 +434,7 @@ def get_performance(
 
 @app.get("/api/positions")
 def get_open_positions():
-    """Posiciones abiertas actualmente.
-
-    Esquema real de positions_active:
-      id, signal_id, opened_at, pair, direction, lot_size, entry_price,
-      current_sl, tp1_price, tp2_price, tp1_hit,
-      ctrader_order_id, ctrader_position_id
-    """
+    """Posiciones abiertas actualmente."""
     try:
         if not _table_exists("positions_active"):
             return []
@@ -425,13 +450,11 @@ def get_open_positions():
 
         rows = df.to_dict(orient="records")
         for row in rows:
-            # Mapear columnas reales a lo que espera el frontend
             row["tp_price"] = row.get("tp1_price")
             row["sl_price"] = row.get("current_sl")
-            row["timeframe"] = "—"  # No existe en la tabla
+            row["timeframe"] = "—"
             row["risk_amount"] = None
 
-            # PnL flotante desde último close en ohlcv_raw (H1)
             try:
                 last = _query(
                     """SELECT close FROM ohlcv_raw
@@ -467,7 +490,6 @@ def get_monitor():
     try:
         now = datetime.now(timezone.utc)
 
-        # Última vela por par/timeframe
         ohlcv = _query("""
             SELECT pair, timeframe,
                    MAX(timestamp) AS last_candle,
@@ -477,7 +499,6 @@ def get_monitor():
             ORDER BY pair, timeframe
         """)
 
-        # Últimos features por par/timeframe
         features = _query("""
             SELECT pair, timeframe,
                    MAX(timestamp) AS last_feature,
@@ -487,7 +508,6 @@ def get_monitor():
             ORDER BY pair, timeframe
         """)
 
-        # Umbrales de alerta (minutos sin actualizar)
         STALE_THRESHOLDS = {"M15": 60, "H1": 180, "H4": 480, "D1": 1800}
 
         def build_rows(df, ts_col):
@@ -516,17 +536,14 @@ def get_monitor():
         ohlcv_rows    = build_rows(ohlcv, "last_candle")
         features_rows = build_rows(features, "last_feature")
 
-        # Resumen global
         ohlcv_ok    = sum(1 for r in ohlcv_rows if r["status"] == "ok")
         feat_ok     = sum(1 for r in features_rows if r["status"] == "ok")
         ohlcv_total = len(ohlcv_rows)
         feat_total  = len(features_rows)
 
-        # Total velas y features en BD
         total_candles  = sum(r["total_rows"] for r in ohlcv_rows)
         total_features = sum(r["total_rows"] for r in features_rows)
 
-        # Última actividad global
         last_candle_global  = ohlcv["last_candle"].max()  if not ohlcv.empty else None
         last_feature_global = features["last_feature"].max() if not features.empty else None
 
@@ -546,6 +563,173 @@ def get_monitor():
     except Exception as e:
         logger.error(f"/api/monitor error: {e}")
         raise HTTPException(500, str(e))
+
+
+# ── /api/health — Salud de modelos ────────────────────────────────────────────
+
+@app.get("/api/health")
+def get_model_health():
+    """Lee el último informe de salud de modelos generado por model_health.py."""
+    try:
+        data = _latest_result_file("health_")
+        if data is None:
+            # Intentar leer de la tabla model_performance si existe
+            if _table_exists("model_performance"):
+                df = _query("""
+                    SELECT pair, timeframe, win_rate, profit_factor, total_pnl,
+                           max_drawdown_pct, expectancy, total_trades, status,
+                           checked_at
+                    FROM model_performance
+                    ORDER BY checked_at DESC
+                    LIMIT 20
+                """)
+                if not df.empty:
+                    df["checked_at"] = df["checked_at"].astype(str)
+                    return _safe_json({
+                        "source": "database",
+                        "models": df.to_dict(orient="records"),
+                    })
+            return {"error": "Sin datos de salud. Ejecuta: python -m src.monitoring.model_health"}
+
+        meta = _latest_result_meta("health_")
+        data["_meta"] = meta
+        return _safe_json(data)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ── /api/anomalies — Alertas de anomalías ─────────────────────────────────────
+
+@app.get("/api/anomalies")
+def get_anomalies():
+    """Lee el último informe de anomalías generado por anomaly_detector.py."""
+    try:
+        data = _latest_result_file("anomalies_")
+        if data is None:
+            return {"error": "Sin datos de anomalías. Ejecuta: python -m src.monitoring.anomaly_detector"}
+
+        meta = _latest_result_meta("anomalies_")
+        data["_meta"] = meta
+        return _safe_json(data)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ── /api/summary — Resumen mensual IA ─────────────────────────────────────────
+
+@app.get("/api/summary")
+def get_monthly_summary():
+    """Lee el último resumen mensual generado por monthly_summary.py."""
+    try:
+        data = _latest_result_file("summary_")
+        if data is None:
+            return {"error": "Sin resumen mensual. Ejecuta: python -m src.analysis.monthly_summary"}
+
+        meta = _latest_result_meta("summary_")
+
+        # También buscar el prompt IA generado
+        prompt_pattern = str(RESULTS_DIR / "ai_prompt_*.md")
+        prompt_files = sorted(glob.glob(prompt_pattern), reverse=True)
+        prompt_text = None
+        if prompt_files:
+            try:
+                with open(prompt_files[0], "r", encoding="utf-8") as f:
+                    prompt_text = f.read()
+            except Exception:
+                pass
+
+        return _safe_json({
+            "summary": data,
+            "ai_prompt": prompt_text,
+            "_meta": meta,
+        })
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ── /api/services — Estado de servicios systemd ──────────────────────────────
+
+@app.get("/api/services")
+def get_services_status():
+    """Consulta el estado de los servicios y timers systemd de ML-Ayram."""
+    services = [
+        {"name": "ayram-dashboard",    "type": "service", "desc": "Dashboard FastAPI"},
+        {"name": "ayram-signals",      "type": "service", "desc": "Generador de señales (continuo)"},
+        {"name": "ayram-collector",    "type": "timer",   "desc": "Descarga velas EODHD (cada 15min)"},
+        {"name": "ayram-features",     "type": "timer",   "desc": "Recálculo features (cada 3h)"},
+        {"name": "ayram-anomaly",      "type": "timer",   "desc": "Detección anomalías (cada 6h)"},
+        {"name": "ayram-train",        "type": "timer",   "desc": "Reentrenamiento semanal (dom 02:00)"},
+        {"name": "ayram-walkforward",  "type": "timer",   "desc": "Walk-forward mensual (1er dom 04:00)"},
+    ]
+
+    results = []
+    for svc in services:
+        unit = f"{svc['name']}.{svc['type']}"
+        info = {
+            "name":   svc["name"],
+            "unit":   unit,
+            "type":   svc["type"],
+            "desc":   svc["desc"],
+            "active": "unknown",
+            "enabled": "unknown",
+            "since":  None,
+            "next_run": None,
+        }
+
+        try:
+            # is-active
+            r = subprocess.run(
+                ["systemctl", "is-active", unit],
+                capture_output=True, text=True, timeout=5,
+            )
+            info["active"] = r.stdout.strip()
+
+            # is-enabled
+            r = subprocess.run(
+                ["systemctl", "is-enabled", unit],
+                capture_output=True, text=True, timeout=5,
+            )
+            info["enabled"] = r.stdout.strip()
+
+            # Para timers: cuándo fue la última ejecución y la próxima
+            if svc["type"] == "timer":
+                r = subprocess.run(
+                    ["systemctl", "show", unit,
+                     "--property=LastTriggerUSec,NextElapseUSecRealtime"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                for line in r.stdout.strip().split("\n"):
+                    if line.startswith("LastTriggerUSec="):
+                        val = line.split("=", 1)[1]
+                        if val and val != "n/a":
+                            info["since"] = val
+                    elif line.startswith("NextElapseUSecRealtime="):
+                        val = line.split("=", 1)[1]
+                        if val and val != "n/a":
+                            info["next_run"] = val
+
+            # Para services: desde cuándo está activo
+            if svc["type"] == "service":
+                r = subprocess.run(
+                    ["systemctl", "show", unit, "--property=ActiveEnterTimestamp"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                for line in r.stdout.strip().split("\n"):
+                    if line.startswith("ActiveEnterTimestamp="):
+                        val = line.split("=", 1)[1]
+                        if val and val != "n/a":
+                            info["since"] = val
+
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+            info["active"] = "error"
+            info["error"]  = str(e)
+
+        results.append(info)
+
+    return _safe_json({
+        "server_time": datetime.now(timezone.utc).isoformat(),
+        "services":    results,
+    })
 
 
 # ── /api/config ───────────────────────────────────────────────────────────────

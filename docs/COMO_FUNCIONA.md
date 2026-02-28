@@ -216,28 +216,43 @@ El prompt le pide a la IA que analice: rendimiento por par, filtros que ajustar,
 
 ## El Dashboard (lo que ves en el navegador)
 
-Accesible en `http://206.81.31.156:8000`, tiene 7 pestañas:
+Accesible en `http://206.81.31.156:8000`, tiene 11 pestañas:
 
 ### 1. Dashboard (página principal)
 Lo primero que ves: cuántas señales ha dado hoy, cuál fue la última, posiciones abiertas con PnL en tiempo real, y las señales más recientes.
 
-### 2. Gráfico
+### 2. Pipeline
+Visualización del estado de cada etapa del pipeline (collector, features, labels, train) con su última ejecución, duración y estado (ok/error). Historial de ejecuciones de las últimas horas.
+
+### 3. Gráfico
 Un gráfico de velas interactivo (como el de TradingView) donde puedes seleccionar cualquier par y timeframe. Las señales LONG aparecen como flechas verdes y las SHORT como flechas rojas. Líneas punteadas marcan TP y SL.
 
-### 3. Historial
+### 4. Historial
 Todas las señales históricas en una tabla con filtros (par, TF, dirección, período). Se ve la confianza de cada modelo, el ADX, y si la señal pasó los filtros.
 
-### 4. Métricas
+### 5. Métricas
 Gráficos de distribución: cuántas señales LONG vs SHORT, señales por par, por día, por timeframe. Confianza media y acuerdo entre modelos.
 
-### 5. Rendimiento
+### 6. Rendimiento
 Lo más importante: PnL total, win rate, profit factor, max drawdown. Una curva de equity que muestra cómo evoluciona el capital. Desglose por par y los últimos 10 trades.
 
-### 6. Monitor
+### 7. Monitor
 Estado de salud de los datos: ¿cuándo fue la última vela descargada para cada par/TF? ¿Cuándo se calcularon los últimos features? Si algo está retrasado, aparece en amarillo o rojo.
 
-### 7. Configuración
+### 8. Mercado
+Panorama del mercado en tiempo real: sesiones activas (Tokio, Londres, Nueva York), correlaciones entre pares, y contexto macroeconómico para decisiones de trading.
+
+### 9. Train
+Monitor de entrenamiento en tiempo real. Muestra el progreso global (X/30 modelos), el modelo que se está entrenando ahora (tipo, par, timeframe), la época o fold actual con su F1, una barra de progreso visual, los modelos ya completados con sus métricas, archivos generados en disco, y un log en vivo del proceso con coloreado por tipo de mensaje. Se actualiza automáticamente cada 10 segundos.
+
+### 10. Bot
+Configuración del bot de trading: pares activos, tamaño de posiciones, modo (simulado/demo), y parámetros de gestión de riesgo.
+
+### 11. Señales
 Editor de filtros en tiempo real. Puedes cambiar la confianza mínima, el ADX, el R:R, etc. sin tocar código. Los cambios se aplican inmediatamente a las nuevas señales.
+
+### 12. Docs
+Documentación del proyecto renderizada directamente en el dashboard. Carga dinámicamente cualquier archivo `.md` de la carpeta `docs/`, incluyendo este documento, el tutorial de implementación y el prompt de continuidad.
 
 ---
 
@@ -396,20 +411,25 @@ Pongamos un ejemplo de cómo funciona todo junto:
 ### ✅ Lo que ya funciona
 - Toda la infraestructura de servidor, BD y deploy
 - Pipeline completo de datos (collector → features → labels)
-- Los dos modelos ML (XGBoost + LSTM) — código listo
+- Los dos modelos ML (XGBoost + LSTM) entrenándose con datos reales
 - Generador de señales con filtros
 - Backtesting + Walk-Forward validation
-- Dashboard web con 7 secciones
+- Dashboard web con 11 secciones incluyendo monitor de entrenamiento en tiempo real
 - Sistema de monitoreo (anomalías + health + análisis IA)
 - Reentrenamiento automático semanal
 - Todos los servicios systemd con auto-reinicio
+- Panel de documentación integrado en el dashboard
+- Monitor de sesiones de mercado y correlaciones
+
+### 🔄 En progreso
+- Primer entrenamiento completo de 30 modelos (5 pares × 3 TF × 2 tipos) ejecutándose en servidor
+- Optimización de hiperparámetros con Optuna
 
 ### ⏳ Lo que falta
-- Completar la descarga histórica (3 años de datos)
-- Entrenar los modelos con datos reales
 - Configurar el bot de Telegram
 - 4 semanas de paper trading con resultados satisfactorios
 - Cuenta demo de cTrader para ejecución real
+- Refinamiento de filtros basado en resultados del paper trading
 
 ---
 

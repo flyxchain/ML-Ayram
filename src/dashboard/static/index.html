@@ -6,6 +6,7 @@
 <title>ML-Ayram Dashboard</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   :root {
     --bg:      #0d1117;
@@ -212,6 +213,45 @@
   .completed-chip .chip-type { font-weight: 600; }
   .completed-chip .chip-f1 { color: var(--green); font-weight: 600; }
 
+  /* ── Docs panel ───────────────────────────────────── */
+  .docs-layout { display: grid; grid-template-columns: 260px 1fr; gap: 20px; min-height: 60vh; }
+  .docs-sidebar { display: flex; flex-direction: column; gap: 6px; }
+  .docs-file-btn { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; text-align: left;
+    transition: all .15s ease; color: var(--text); }
+  .docs-file-btn:hover { border-color: var(--blue); background: #161b2288; }
+  .docs-file-btn.active { border-color: var(--blue); background: #58a6ff15; box-shadow: inset 3px 0 0 var(--blue); }
+  .docs-file-btn .doc-name { font-weight: 600; font-size: 13px; }
+  .docs-file-btn .doc-meta { font-size: 11px; color: var(--muted); }
+  .docs-content { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 32px 40px; overflow-x: auto; }
+  /* Markdown rendered styles */
+  .md-body h1 { font-size: 28px; font-weight: 700; margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .md-body h2 { font-size: 22px; font-weight: 700; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .md-body h3 { font-size: 17px; font-weight: 600; margin: 24px 0 8px; color: var(--blue); }
+  .md-body h4 { font-size: 15px; font-weight: 600; margin: 20px 0 6px; color: var(--muted); }
+  .md-body p { margin: 10px 0; line-height: 1.7; color: #c9d1d9; }
+  .md-body ul, .md-body ol { margin: 10px 0; padding-left: 24px; }
+  .md-body li { margin: 4px 0; line-height: 1.6; }
+  .md-body a { color: var(--blue); text-decoration: none; }
+  .md-body a:hover { text-decoration: underline; }
+  .md-body code { background: #0d1117; padding: 2px 6px; border-radius: 4px; font-size: 13px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace; color: var(--yellow); }
+  .md-body pre { background: #010409; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; overflow-x: auto; margin: 16px 0; }
+  .md-body pre code { background: none; padding: 0; color: #c9d1d9; font-size: 12px; line-height: 1.6; }
+  .md-body blockquote { border-left: 3px solid var(--blue); padding: 8px 16px; margin: 16px 0;
+    background: #58a6ff08; color: var(--muted); font-style: italic; }
+  .md-body table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  .md-body th { background: #0d1117; padding: 10px 12px; text-align: left; border: 1px solid var(--border);
+    font-weight: 600; color: var(--text); }
+  .md-body td { padding: 8px 12px; border: 1px solid var(--border); color: #c9d1d9; }
+  .md-body tr:hover td { background: #161b2244; }
+  .md-body hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+  .md-body strong { color: var(--text); }
+  .md-body img { max-width: 100%; border-radius: var(--radius); }
+  @media(max-width:900px) { .docs-layout { grid-template-columns: 1fr; } }
+
   @media(max-width:900px) {
     .grid-4,.grid-3 { grid-template-columns: 1fr 1fr; }
     .config-grid,.grid-2 { grid-template-columns: 1fr; }
@@ -238,6 +278,7 @@
     <button class="nav-link"         onclick="showPage('train',this)">Train</button>
     <button class="nav-link"         onclick="showPage('bot',this)">Bot</button>
     <button class="nav-link"         onclick="showPage('config',this)">Señales</button>
+    <button class="nav-link"         onclick="showPage('docs',this)">📚 Docs</button>
   </div>
   <div class="nav-status">
     <div class="dot" id="status-dot"></div>
@@ -877,6 +918,28 @@
   </div>
 </div>
 
+<!-- ══════════ DOCS ══════════ -->
+<div id="page-docs" class="page">
+  <div class="section-header" style="margin-bottom:20px">
+    <span class="section-title">📚 Documentación del Proyecto</span>
+    <span style="color:var(--muted);font-size:12px" id="docs-count"></span>
+  </div>
+  <div class="docs-layout">
+    <div class="docs-sidebar" id="docs-sidebar">
+      <div style="color:var(--muted);font-size:13px;padding:12px">Cargando documentos...</div>
+    </div>
+    <div class="docs-content">
+      <div class="md-body" id="docs-rendered">
+        <div style="color:var(--muted);text-align:center;padding:60px 20px">
+          <div style="font-size:48px;margin-bottom:16px">📚</div>
+          <div style="font-size:16px;font-weight:600;margin-bottom:8px">Documentación ML-Ayram</div>
+          <div>Selecciona un documento de la lista para leerlo aquí.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════ JS ══════════ -->
 <script>
 let _histCurrentPage = 1;
@@ -892,7 +955,7 @@ function showPage(name, btn) {
   const loaders = {
     chart: loadChart, history: () => loadHistory(1), metrics: loadMetrics,
     performance: loadPerformance, monitor: loadMonitor, config: loadConfig,
-    pipeline: loadPipeline, bot: loadBotConfig, market: loadMarket, train: loadTrain,
+    pipeline: loadPipeline, bot: loadBotConfig, market: loadMarket, train: loadTrain, docs: loadDocs,
   };
   if (loaders[name]) loaders[name]();
 }
@@ -1828,6 +1891,109 @@ async function loadTrain() {
       if (document.getElementById('page-train').classList.contains('active')) loadTrain();
       else clearInterval(_trainInterval);
     }, 10000);
+  }
+}
+
+// ── Documentation ───────────────────────────────────────────────────────
+let _docsListCache = null;
+let _currentDoc = null;
+
+const DOC_ICONS = {
+  'COMO_FUNCIONA': '📖',
+  'TUTORIAL_COMPLETO': '🛠️',
+  'PROMPT_CONTINUIDAD': '🤖',
+};
+const DOC_DESCRIPTIONS = {
+  'COMO_FUNCIONA': 'Explicación detallada de todo el sistema',
+  'TUTORIAL_COMPLETO': 'Guía paso a paso de implementación',
+  'PROMPT_CONTINUIDAD': 'Prompt para continuidad con IA',
+};
+
+async function loadDocs() {
+  try {
+    // Cargar lista (cachear)
+    if (!_docsListCache) {
+      const resp = await fetch('/api/docs');
+      if (!resp.ok) {
+        document.getElementById('docs-sidebar').innerHTML =
+          `<div style="color:var(--red);padding:12px">⚠️ Endpoint /api/docs no disponible (HTTP ${resp.status}). Despliega la última versión.</div>`;
+        return;
+      }
+      _docsListCache = await resp.json();
+    }
+    const files = _docsListCache.files || [];
+    document.getElementById('docs-count').textContent = `${files.length} documentos`;
+
+    // Sidebar
+    const sidebar = document.getElementById('docs-sidebar');
+    sidebar.innerHTML = files.map(f => {
+      const icon = DOC_ICONS[f.name] || '📄';
+      const desc = DOC_DESCRIPTIONS[f.name] || f.filename;
+      const mod = f.modified ? new Date(f.modified).toLocaleDateString('es') : '';
+      const active = _currentDoc === f.filename ? ' active' : '';
+      return `<div class="docs-file-btn${active}" onclick="loadDocContent('${f.filename}')">
+        <div class="doc-name">${icon} ${f.name.replace(/_/g, ' ')}</div>
+        <div class="doc-meta">${desc}</div>
+        <div class="doc-meta">${f.size_kb} KB • ${mod}</div>
+      </div>`;
+    }).join('');
+
+    // Auto-cargar el primero si no hay ninguno seleccionado
+    if (!_currentDoc && files.length > 0) {
+      // Preferir COMO_FUNCIONA
+      const pref = files.find(f => f.name === 'COMO_FUNCIONA') || files[0];
+      loadDocContent(pref.filename);
+    }
+  } catch(e) {
+    document.getElementById('docs-sidebar').innerHTML =
+      `<div style="color:var(--red);padding:12px">Error: ${e.message}</div>`;
+  }
+}
+
+async function loadDocContent(filename) {
+  _currentDoc = filename;
+  const rendered = document.getElementById('docs-rendered');
+  rendered.innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px">Cargando...</div>';
+
+  // Actualizar sidebar activo
+  document.querySelectorAll('.docs-file-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.onclick.toString().includes(filename));
+  });
+
+  try {
+    const resp = await fetch(`/api/docs/${encodeURIComponent(filename)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    // Renderizar markdown
+    const html = marked.parse(data.content, {
+      breaks: true,
+      gfm: true,
+    });
+    rendered.innerHTML = html;
+
+    // Scroll al top del contenido
+    rendered.scrollTop = 0;
+    document.querySelector('.docs-content').scrollTop = 0;
+  } catch(e) {
+    rendered.innerHTML = `<div style="color:var(--red);padding:20px">❌ Error cargando ${filename}: ${e.message}</div>`;
+  }
+
+  // Re-render sidebar para marcar activo
+  if (_docsListCache) {
+    const files = _docsListCache.files || [];
+    const sidebar = document.getElementById('docs-sidebar');
+    sidebar.innerHTML = files.map(f => {
+      const icon = DOC_ICONS[f.name] || '📄';
+      const desc = DOC_DESCRIPTIONS[f.name] || f.filename;
+      const mod = f.modified ? new Date(f.modified).toLocaleDateString('es') : '';
+      const active = _currentDoc === f.filename ? ' active' : '';
+      return `<div class="docs-file-btn${active}" onclick="loadDocContent('${f.filename}')">
+        <div class="doc-name">${icon} ${f.name.replace(/_/g, ' ')}</div>
+        <div class="doc-meta">${desc}</div>
+        <div class="doc-meta">${f.size_kb} KB • ${mod}</div>
+      </div>`;
+    }).join('');
   }
 }
 

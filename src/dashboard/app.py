@@ -1124,6 +1124,43 @@ def get_train_status(lines: int = Query(150, le=500)):
         raise HTTPException(500, str(e))
 
 
+# ── /api/docs — Documentación dinámica ──────────────────────────────────
+
+DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"
+
+
+@app.get("/api/docs")
+def list_docs():
+    """Lista todos los .md de la carpeta docs/"""
+    if not DOCS_DIR.exists():
+        return {"files": []}
+    files = []
+    for f in sorted(DOCS_DIR.glob("*.md")):
+        stat = f.stat()
+        files.append({
+            "name": f.stem,               # sin extensión
+            "filename": f.name,           # con extensión
+            "size_kb": round(stat.st_size / 1024, 1),
+            "modified": datetime.fromtimestamp(
+                stat.st_mtime, tz=timezone.utc
+            ).isoformat(),
+        })
+    return {"files": files}
+
+
+@app.get("/api/docs/{filename}")
+def get_doc(filename: str):
+    """Devuelve el contenido markdown de un archivo"""
+    # Seguridad: solo .md, sin path traversal
+    if not filename.endswith(".md") or "/" in filename or "\\" in filename:
+        raise HTTPException(400, "Solo se permiten archivos .md")
+    filepath = DOCS_DIR / filename
+    if not filepath.exists():
+        raise HTTPException(404, f"{filename} no encontrado")
+    content = filepath.read_text(encoding="utf-8")
+    return {"filename": filename, "name": filepath.stem, "content": content}
+
+
 # ── /api/config ───────────────────────────────────────────────────────────────
 
 @app.get("/api/config")

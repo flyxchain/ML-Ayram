@@ -26,6 +26,16 @@ import os
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# ── Telegram helpers ──────────────────────────────────────────────────────────
+
+def _tg(text: str, silent: bool = False) -> None:
+    """Envía notificación a Telegram (no bloquea si falla)."""
+    try:
+        from src.notifications.telegram import send_message
+        send_message(text, silent=silent)
+    except Exception as e:
+        logger.debug(f"Telegram notify skip: {e}")
+
 # ── Constantes ────────────────────────────────────────────────────────────────
 
 ALL_PAIRS      = ["EURUSD", "GBPUSD", "USDJPY", "EURJPY", "XAUUSD"]
@@ -61,6 +71,64 @@ def _labeled_row_count(engine, pair: str, tf: str) -> int:
             {"pair": pair, "tf": tf},
         ).fetchone()
     return int(row[0]) if row else 0
+
+
+def _tg_model_done(r: TrainResult, completed: int, total: int) -> None:
+    """Notifica a Telegram el resultado de un modelo individual."""
+    if r.status == "ok":
+        icon = "✅"
+        detail = f"F1: <b>{r.metric:.4f}</b>"
+    elif r.status == "skip":
+        icon = "⏭️"
+        detail = f"Omitido ({r.error_msg})"
+    else:
+        icon = "❌"
+        detail = f"Error: {r.error_msg}"
+
+    model_upper = r.model.upper().replace("XGB", "XGBoost")
+    elapsed = f"{r.elapsed_s/60:.1f}min" if r.elapsed_s > 60 else f"{r.elapsed_s:.0f}s"
+
+    _tg(
+        f"{icon} <b>{model_upper} {r.pair} {r.timeframe}</b>  [{completed}/{total}]\n"
+        f"   {detail}  |  {r.rows} filas  |  {elapsed}",
+        silent=True,
+    )
+
+
+def _tg_training_summary(results: list["TrainResult"], total_time: float) -> None:
+    """Notificación final de resumen completo."""
+    ok     = [r for r in results if r.status == "ok"]
+    errors = [r for r in results if r.status == "error"]
+    skips  = [r for r in results if r.status == "skip"]
+
+    icon = "🎉" if not errors else "⚠️"
+    lines = [
+        f"{icon} <b>Entrenamiento finalizado</b>",
+        f"━━━━━━━━━━━━━━━━━━━━",
+        f"✅ Completados: <b>{len(ok)}</b>",
+    ]
+    if skips:
+        lines.append(f"⏭️ Omitidos: {len(skips)}")
+    if errors:
+        lines.append(f"❌ Errores: <b>{len(errors)}</b>")
+    lines.append(f"⏱️ Tiempo total: <b>{total_time/60:.1f} min</b>")
+
+    # Top modelos por F1
+    if ok:
+        lines.append("")
+        lines.append("🏆 <b>Mejores modelos:</b>")
+        for r in sorted(ok, key=lambda x: -x.metric)[:5]:
+            model_name = r.model.upper().replace("XGB", "XGBoost")
+            lines.append(f"   {model_name} {r.pair} {r.timeframe}: <b>{r.metric:.4f}</b>")
+
+    if errors:
+        lines.append("")
+        lines.append("❌ <b>Errores:</b>")
+        for r in errors:
+            model_name = r.model.upper().replace("XGB", "XGBoost")
+            lines.append(f"   {model_name} {r.pair} {r.timeframe}: {r.error_msg}")
+
+    _tg("\n".join(lines))
 
 
 def _print_summary(results: list[TrainResult]) -> None:
@@ -191,6 +259,23 @@ def main() -> None:
     logger.info(f"Optuna:     {'sí' if args.optimize   else 'no'}")
     logger.info("═" * 72)
 
+    # ── Telegram: inicio de entrenamiento ─────────────────────────────────
+    models_list = []
+    if train_xgb_flag:  models_list.append("XGBoost")
+    if train_lstm_flag: models_list.append("LSTM")
+    n_combos = len(args.pairs) * len(args.timeframes) * len(models_list)
+    _tg(
+        f"🏋️ <b>Entrenamiento iniciado</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Modelos: {', '.join(models_list)}\n"
+        f"💱 Pares: {', '.join(args.pairs)}\n"
+        f"⏱️ TFs: {', '.join(args.timeframes)}\n"
+        f"🔢 Total: <b>{n_combos} entrenamientos</b>\n"
+        f"{'🔍 Optuna: ' + str(args.trials) + ' trials' if args.optimize else ''}",
+        silent=True,
+    )
+    completed = 0
+
     for tf in args.timeframes:
         for pair in args.pairs:
             rows = _labeled_row_count(engine, pair, tf)
@@ -206,13 +291,21 @@ def main() -> None:
             if train_xgb_flag:
                 r = train_xgb(pair, tf, rows, optimize=args.optimize, n_trials=args.trials)
                 results.append(r)
+                completed += 1
+                _tg_model_done(r, completed, n_combos)
 
             if train_lstm_flag:
                 r = train_lstm(pair, tf, rows, epochs=args.epochs, patience=args.patience)
                 results.append(r)
+                completed += 1
+                _tg_model_done(r, completed, n_combos)
 
     _print_summary(results)
-    logger.info(f"Tiempo total: {(time.time() - total_start)/60:.1f} min")
+    total_elapsed = time.time() - total_start
+    logger.info(f"Tiempo total: {total_elapsed/60:.1f} min")
+
+    # ── Telegram: resumen final ───────────────────────────────────────
+    _tg_training_summary(results, total_elapsed)
 
 
 if __name__ == "__main__":

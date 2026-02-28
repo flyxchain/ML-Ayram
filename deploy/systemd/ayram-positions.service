@@ -1,0 +1,24 @@
+[Unit]
+Description=ML-Ayram Position Manager — gestión de posiciones activas
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ayram
+Group=ayram
+WorkingDirectory=/home/ayram/ml-ayram
+
+EnvironmentFile=/home/ayram/ml-ayram/.env
+
+ExecStart=/home/ayram/ml-ayram/venv/bin/python3 \
+    -m src.execution.position_manager
+
+TimeoutStartSec=300
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ayram-positions
+
+NoNewPrivileges=true
+PrivateTmp=true

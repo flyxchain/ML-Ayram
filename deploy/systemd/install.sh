@@ -35,6 +35,7 @@ for f in ayram-dashboard.service ayram-signals.service \
          ayram-collector.service ayram-collector.timer \
          ayram-features.service  ayram-features.timer \
          ayram-train.service     ayram-train.timer \
+         ayram-positions.service  ayram-positions.timer \
          ayram-walkforward.service ayram-walkforward.timer \
          ayram-anomaly.service    ayram-anomaly.timer; do
     cp "$SCRIPT_DIR/$f" "$SYSTEMD_DIR/"
@@ -52,6 +53,7 @@ systemctl enable ayram-signals.service
 systemctl enable ayram-collector.timer
 systemctl enable ayram-features.timer
 systemctl enable ayram-train.timer
+systemctl enable ayram-positions.timer
 systemctl enable ayram-walkforward.timer
 systemctl enable ayram-anomaly.timer
 
@@ -68,6 +70,7 @@ systemctl start ayram-signals.service
 systemctl start ayram-collector.timer
 systemctl start ayram-features.timer
 systemctl start ayram-train.timer
+systemctl start ayram-positions.timer
 systemctl start ayram-walkforward.timer
 systemctl start ayram-anomaly.timer
 
@@ -76,8 +79,8 @@ echo ""
 echo "=== Estado ==="
 for unit in ayram-dashboard.service ayram-signals.service \
             ayram-collector.timer ayram-features.timer \
-            ayram-train.timer ayram-walkforward.timer \
-            ayram-anomaly.timer; do
+            ayram-train.timer ayram-positions.timer \
+            ayram-walkforward.timer ayram-anomaly.timer; do
     printf "%-35s " "$unit:"
     systemctl is-active "$unit" 2>/dev/null || echo "inactive"
 done

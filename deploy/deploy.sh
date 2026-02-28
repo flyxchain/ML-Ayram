@@ -25,9 +25,9 @@ VENV="$REMOTE_DIR/venv/bin"
 SSH="ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_HOST"
 
 # Servicios en orden de dependencia
-SERVICES_ONESHOT=("ayram-collector" "ayram-features" "ayram-train" "ayram-walkforward" "ayram-anomaly")  # oneshot — gestionados por timers
+SERVICES_ONESHOT=("ayram-collector" "ayram-features" "ayram-train" "ayram-positions" "ayram-walkforward" "ayram-anomaly")  # oneshot — gestionados por timers
 SERVICES_DAEMON=("ayram-dashboard" "ayram-signals")     # daemons continuos
-TIMERS=("ayram-collector" "ayram-features" "ayram-train" "ayram-walkforward" "ayram-anomaly")
+TIMERS=("ayram-collector" "ayram-features" "ayram-train" "ayram-positions" "ayram-walkforward" "ayram-anomaly")
 
 # Archivos/dirs a excluir del rsync
 RSYNC_EXCLUDES=(

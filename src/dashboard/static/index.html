@@ -213,6 +213,45 @@
   .completed-chip .chip-type { font-weight: 600; }
   .completed-chip .chip-f1 { color: var(--green); font-weight: 600; }
 
+  /* ── Backtest panel ───────────────────────────────── */
+  .bt-config { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; padding: 16px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 20px; }
+  .bt-config label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .bt-config .bt-field { display: flex; flex-direction: column; gap: 4px; }
+  .bt-config select, .bt-config input { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+  .bt-config select { min-width: 140px; }
+  .bt-config select[multiple] { min-height: 80px; }
+  .bt-run-btn { padding: 10px 28px; background: var(--blue); color: #fff; border: none; border-radius: 6px;
+    font-weight: 600; font-size: 14px; cursor: pointer; transition: all .15s; align-self: end; }
+  .bt-run-btn:hover { background: #4c93e6; }
+  .bt-run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .bt-run-btn.running { animation: pulse 1s infinite; }
+  .bt-results { display: none; }
+  .bt-results.visible { display: block; }
+  .bt-kpi-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 20px; }
+  .bt-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; text-align: center; }
+  .bt-kpi .kpi-val { font-size: 24px; font-weight: 700; }
+  .bt-kpi .kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
+  .bt-charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .bt-chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .bt-chart-card h4 { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
+  .bt-breakdown-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .bt-trades-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .bt-trades-table th { background: #0d1117; padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border);
+    font-weight: 600; color: var(--muted); text-transform: uppercase; font-size: 10px; position: sticky; top: 0; }
+  .bt-trades-table td { padding: 8px; border-bottom: 1px solid #21262d; }
+  .bt-trades-table tr:hover td { background: #161b2244; }
+  .bt-trades-wrap { max-height: 400px; overflow-y: auto; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius); }
+  .bt-empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .bt-empty .icon { font-size: 48px; margin-bottom: 12px; }
+  @media(max-width:1100px) {
+    .bt-kpi-grid { grid-template-columns: repeat(3, 1fr); }
+    .bt-charts-row, .bt-breakdown-row { grid-template-columns: 1fr; }
+  }
+
   /* ── Docs panel ───────────────────────────────────── */
   .docs-layout { display: grid; grid-template-columns: 260px 1fr; gap: 20px; min-height: 60vh; }
   .docs-sidebar { display: flex; flex-direction: column; gap: 6px; }
@@ -278,6 +317,7 @@
     <button class="nav-link"         onclick="showPage('train',this)">Train</button>
     <button class="nav-link"         onclick="showPage('bot',this)">Bot</button>
     <button class="nav-link"         onclick="showPage('config',this)">Señales</button>
+    <button class="nav-link"         onclick="showPage('backtest',this)">🎯 Backtest</button>
     <button class="nav-link"         onclick="showPage('docs',this)">📚 Docs</button>
   </div>
   <div class="nav-status">
@@ -918,6 +958,125 @@
   </div>
 </div>
 
+<!-- ══════════ BACKTEST ══════════ -->
+<div id="page-backtest" class="page">
+  <div class="section-header" style="margin-bottom:16px">
+    <span class="section-title">🎯 Backtesting Visual</span>
+    <span style="color:var(--muted);font-size:12px" id="bt-signal-info"></span>
+  </div>
+
+  <!-- Config bar -->
+  <div class="bt-config">
+    <div class="bt-field">
+      <label>Pares</label>
+      <select id="bt-pairs" multiple>
+        <option value="EURUSD" selected>EURUSD</option>
+        <option value="GBPUSD" selected>GBPUSD</option>
+        <option value="USDJPY" selected>USDJPY</option>
+        <option value="EURJPY" selected>EURJPY</option>
+        <option value="XAUUSD" selected>XAUUSD</option>
+      </select>
+    </div>
+    <div class="bt-field">
+      <label>Timeframes</label>
+      <select id="bt-tfs" multiple>
+        <option value="M15" selected>M15</option>
+        <option value="H1" selected>H1</option>
+        <option value="H4" selected>H4</option>
+      </select>
+    </div>
+    <div class="bt-field">
+      <label>Días</label>
+      <input type="number" id="bt-days" value="90" min="7" max="365" style="width:80px">
+    </div>
+    <div class="bt-field">
+      <label>Confianza mín.</label>
+      <input type="number" id="bt-conf" value="54" min="50" max="95" step="1" style="width:80px">
+      <span style="font-size:10px;color:var(--muted)">%</span>
+    </div>
+    <button class="bt-run-btn" id="bt-run-btn" onclick="runBacktest()">▶ Ejecutar Backtest</button>
+  </div>
+
+  <!-- Results -->
+  <div id="bt-results" class="bt-results">
+    <!-- KPIs -->
+    <div class="bt-kpi-grid">
+      <div class="bt-kpi"><div class="kpi-val" id="bt-k-trades">-</div><div class="kpi-label">Trades</div></div>
+      <div class="bt-kpi"><div class="kpi-val" id="bt-k-wr">-</div><div class="kpi-label">Win Rate</div></div>
+      <div class="bt-kpi"><div class="kpi-val" id="bt-k-pnl">-</div><div class="kpi-label">PnL Total</div></div>
+      <div class="bt-kpi"><div class="kpi-val" id="bt-k-pf">-</div><div class="kpi-label">Profit Factor</div></div>
+      <div class="bt-kpi"><div class="kpi-val" id="bt-k-dd">-</div><div class="kpi-label">Max Drawdown</div></div>
+      <div class="bt-kpi"><div class="kpi-val" id="bt-k-exp">-</div><div class="kpi-label">Expectancy</div></div>
+    </div>
+
+    <!-- Equity + Drawdown -->
+    <div class="bt-charts-row">
+      <div class="bt-chart-card">
+        <h4>📈 Curva de Equity</h4>
+        <canvas id="bt-equity-chart" height="220"></canvas>
+      </div>
+      <div class="bt-chart-card">
+        <h4>📉 Drawdown</h4>
+        <canvas id="bt-dd-chart" height="220"></canvas>
+      </div>
+    </div>
+
+    <!-- Breakdowns -->
+    <div class="bt-breakdown-row">
+      <div class="bt-chart-card">
+        <h4>📊 PnL por Par</h4>
+        <canvas id="bt-pair-chart" height="200"></canvas>
+      </div>
+      <div class="bt-chart-card">
+        <h4>⏱️ PnL por Timeframe</h4>
+        <canvas id="bt-tf-chart" height="200"></canvas>
+      </div>
+      <div class="bt-chart-card">
+        <h4>📅 PnL por Mes</h4>
+        <canvas id="bt-month-chart" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- Win/Loss distribution -->
+    <div class="bt-charts-row">
+      <div class="bt-chart-card">
+        <h4>🎲 Distribución Wins vs Losses vs Timeouts</h4>
+        <canvas id="bt-dist-chart" height="160"></canvas>
+      </div>
+      <div class="bt-chart-card">
+        <h4>💰 Avg Win vs Avg Loss</h4>
+        <canvas id="bt-avg-chart" height="160"></canvas>
+      </div>
+    </div>
+
+    <!-- Trades table -->
+    <div class="section-header" style="margin:20px 0 10px">
+      <span class="section-title" style="font-size:14px">📝 Trades Individuales</span>
+      <span style="color:var(--muted);font-size:12px" id="bt-trades-count"></span>
+    </div>
+    <div class="bt-trades-wrap">
+      <table class="bt-trades-table">
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Par</th><th>TF</th><th>Dir</th><th>Conf.</th>
+            <th>Entry</th><th>Exit</th><th>Resultado</th>
+            <th>Pips</th><th>PnL €</th><th>Lotes</th><th>Barras</th>
+          </tr>
+        </thead>
+        <tbody id="bt-trades-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="bt-empty" class="bt-empty">
+    <div class="icon">🎯</div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:8px">Backtesting Visual</div>
+    <div>Selecciona pares, timeframes y período, luego pulsa <strong>Ejecutar Backtest</strong>.</div>
+    <div style="margin-top:8px;font-size:12px" id="bt-availability"></div>
+  </div>
+</div>
+
 <!-- ══════════ DOCS ══════════ -->
 <div id="page-docs" class="page">
   <div class="section-header" style="margin-bottom:20px">
@@ -955,7 +1114,8 @@ function showPage(name, btn) {
   const loaders = {
     chart: loadChart, history: () => loadHistory(1), metrics: loadMetrics,
     performance: loadPerformance, monitor: loadMonitor, config: loadConfig,
-    pipeline: loadPipeline, bot: loadBotConfig, market: loadMarket, train: loadTrain, docs: loadDocs,
+    pipeline: loadPipeline, bot: loadBotConfig, market: loadMarket, train: loadTrain,
+    backtest: loadBacktest, docs: loadDocs,
   };
   if (loaders[name]) loaders[name]();
 }
@@ -1892,6 +2052,212 @@ async function loadTrain() {
       else clearInterval(_trainInterval);
     }, 10000);
   }
+}
+
+// ── Backtest visual ─────────────────────────────────────────────────────
+let _btCharts = {};   // Chart.js instances para destruir al re-render
+
+async function loadBacktest() {
+  // Cargar quick-stats para mostrar disponibilidad de señales
+  try {
+    const resp = await fetch('/api/backtest/quick-stats');
+    if (resp.ok) {
+      const data = await resp.json();
+      const avail = document.getElementById('bt-availability');
+      if (data.has_signals) {
+        const total = data.stats.reduce((s, r) => s + r.total, 0);
+        const pairs = [...new Set(data.stats.map(r => r.pair))];
+        avail.innerHTML = `<span style="color:var(--green)">✅ ${total} señales disponibles</span> en ${pairs.join(', ')}`;
+        document.getElementById('bt-signal-info').textContent = `${total} señales en BD`;
+      } else {
+        avail.innerHTML = '<span style="color:var(--yellow)">⚠️ Sin señales en la BD todavía. Los modelos deben terminar de entrenarse y generar señales primero.</span>';
+        document.getElementById('bt-signal-info').textContent = 'Sin señales';
+      }
+    }
+  } catch(e) {
+    document.getElementById('bt-availability').innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+  }
+}
+
+async function runBacktest() {
+  const btn = document.getElementById('bt-run-btn');
+  btn.disabled = true;
+  btn.classList.add('running');
+  btn.textContent = '⏳ Ejecutando...';
+
+  // Recoger config
+  const pairs = Array.from(document.getElementById('bt-pairs').selectedOptions).map(o => o.value);
+  const tfs = Array.from(document.getElementById('bt-tfs').selectedOptions).map(o => o.value);
+  const days = parseInt(document.getElementById('bt-days').value) || 90;
+  const conf = (parseInt(document.getElementById('bt-conf').value) || 54) / 100;
+
+  try {
+    const resp = await fetch('/api/backtest/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ pairs, timeframes: tfs, days, min_confidence: conf })
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+    const r = await resp.json();
+
+    if (r.total_trades === 0) {
+      document.getElementById('bt-results').classList.remove('visible');
+      document.getElementById('bt-empty').style.display = 'block';
+      document.getElementById('bt-availability').innerHTML =
+        `<span style="color:var(--yellow)">⚠️ 0 trades simulados (${r.total_signals} señales encontradas pero sin barras OHLCV forward). Verifica que hay datos suficientes.</span>`;
+      return;
+    }
+
+    // Ocultar empty, mostrar results
+    document.getElementById('bt-empty').style.display = 'none';
+    document.getElementById('bt-results').classList.add('visible');
+
+    renderBacktestResults(r);
+
+  } catch(e) {
+    alert('Error ejecutando backtest: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('running');
+    btn.textContent = '▶ Ejecutar Backtest';
+  }
+}
+
+function renderBacktestResults(r) {
+  // KPIs
+  const pnlColor = r.total_pnl_eur >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('bt-k-trades').textContent = `${r.wins}W / ${r.losses}L / ${r.timeouts}T`;
+  document.getElementById('bt-k-wr').innerHTML = `<span style="color:${r.win_rate >= 50 ? 'var(--green)' : 'var(--red)'}">${r.win_rate}%</span>`;
+  document.getElementById('bt-k-pnl').innerHTML = `<span style="color:${pnlColor}">${r.total_pnl_eur >= 0 ? '+' : ''}${r.total_pnl_eur.toFixed(2)}€</span>`;
+  document.getElementById('bt-k-pf').textContent = r.profit_factor != null ? r.profit_factor.toFixed(2) : '∞';
+  document.getElementById('bt-k-dd').innerHTML = `<span style="color:var(--red)">-${r.max_drawdown.toFixed(0)}€ (${r.max_drawdown_pct.toFixed(1)}%)</span>`;
+  document.getElementById('bt-k-exp').innerHTML = `<span style="color:${r.expectancy >= 0 ? 'var(--green)' : 'var(--red)'}">${r.expectancy >= 0 ? '+' : ''}${r.expectancy.toFixed(2)}€</span>`;
+  document.getElementById('bt-trades-count').textContent = `${r.total_trades} trades | ${r.date_from} → ${r.date_to}`;
+
+  // Destruir charts previos
+  Object.values(_btCharts).forEach(c => c.destroy());
+  _btCharts = {};
+
+  const chartOpts = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
+      y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } }
+    }
+  };
+
+  // Equity curve
+  if (r.equity_curve && r.equity_curve.length > 0) {
+    _btCharts.equity = new Chart(document.getElementById('bt-equity-chart'), {
+      type: 'line',
+      data: {
+        labels: r.equity_curve.map(p => p.date),
+        datasets: [{
+          data: r.equity_curve.map(p => p.equity),
+          borderColor: '#58a6ff', backgroundColor: '#58a6ff18',
+          fill: true, tension: 0.3, pointRadius: r.equity_curve.length > 50 ? 0 : 3, borderWidth: 2
+        }]
+      },
+      options: { ...chartOpts, plugins: { ...chartOpts.plugins, tooltip: {
+        callbacks: { label: ctx => `${ctx.parsed.y.toFixed(2)}€` }
+      }}}
+    });
+
+    // Drawdown chart
+    _btCharts.dd = new Chart(document.getElementById('bt-dd-chart'), {
+      type: 'line',
+      data: {
+        labels: r.equity_curve.map(p => p.date),
+        datasets: [{
+          data: r.equity_curve.map(p => -p.drawdown),
+          borderColor: '#f85149', backgroundColor: '#f8514918',
+          fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
+        }]
+      },
+      options: { ...chartOpts, plugins: { ...chartOpts.plugins, tooltip: {
+        callbacks: { label: ctx => `${ctx.parsed.y.toFixed(2)}€` }
+      }}}
+    });
+  }
+
+  // PnL por par
+  const pairLabels = Object.keys(r.by_pair || {});
+  const pairPnl = pairLabels.map(p => r.by_pair[p].pnl_eur);
+  const pairColors = pairPnl.map(v => v >= 0 ? '#3fb950' : '#f85149');
+  _btCharts.pair = new Chart(document.getElementById('bt-pair-chart'), {
+    type: 'bar',
+    data: { labels: pairLabels, datasets: [{ data: pairPnl, backgroundColor: pairColors }] },
+    options: chartOpts
+  });
+
+  // PnL por TF
+  const tfLabels = Object.keys(r.by_timeframe || {});
+  const tfPnl = tfLabels.map(t => r.by_timeframe[t].pnl_eur);
+  const tfColors = tfPnl.map(v => v >= 0 ? '#3fb950' : '#f85149');
+  _btCharts.tf = new Chart(document.getElementById('bt-tf-chart'), {
+    type: 'bar',
+    data: { labels: tfLabels, datasets: [{ data: tfPnl, backgroundColor: tfColors }] },
+    options: chartOpts
+  });
+
+  // PnL por mes
+  const monthLabels = Object.keys(r.by_month || {}).sort();
+  const monthPnl = monthLabels.map(m => r.by_month[m].pnl_eur);
+  const monthColors = monthPnl.map(v => v >= 0 ? '#3fb950' : '#f85149');
+  _btCharts.month = new Chart(document.getElementById('bt-month-chart'), {
+    type: 'bar',
+    data: { labels: monthLabels, datasets: [{ data: monthPnl, backgroundColor: monthColors }] },
+    options: chartOpts
+  });
+
+  // Distribución W/L/T (doughnut)
+  _btCharts.dist = new Chart(document.getElementById('bt-dist-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Wins', 'Losses', 'Timeouts'],
+      datasets: [{ data: [r.wins, r.losses, r.timeouts],
+        backgroundColor: ['#3fb950', '#f85149', '#8b949e'], borderWidth: 0 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'right', labels: { color: '#c9d1d9', font: { size: 12 } } } }
+    }
+  });
+
+  // Avg Win vs Loss (horizontal bar)
+  _btCharts.avg = new Chart(document.getElementById('bt-avg-chart'), {
+    type: 'bar',
+    data: {
+      labels: ['Avg Win', 'Avg Loss'],
+      datasets: [{ data: [r.avg_win_eur, Math.abs(r.avg_loss_eur)],
+        backgroundColor: ['#3fb950', '#f85149'] }]
+    },
+    options: { ...chartOpts, indexAxis: 'y' }
+  });
+
+  // Tabla de trades
+  const tbody = document.getElementById('bt-trades-body');
+  const trades = r.trades || [];
+  tbody.innerHTML = trades.map(t => {
+    const resIcon = t.result === 'tp_hit' ? '✅' : t.result === 'sl_hit' ? '❌' : '⏳';
+    const resColor = t.result === 'tp_hit' ? 'var(--green)' : t.result === 'sl_hit' ? 'var(--red)' : 'var(--muted)';
+    const dir = t.direction === 1 ? '<span style="color:var(--green)">LONG</span>' : '<span style="color:var(--red)">SHORT</span>';
+    const pnlC = t.pnl_eur >= 0 ? 'var(--green)' : 'var(--red)';
+    return `<tr>
+      <td>${(t.opened_at || '').substring(0, 16)}</td>
+      <td><strong>${t.pair}</strong></td>
+      <td>${t.timeframe}</td>
+      <td>${dir}</td>
+      <td>${(t.confidence * 100).toFixed(0)}%</td>
+      <td>${t.actual_entry}</td>
+      <td>${t.exit_price}</td>
+      <td style="color:${resColor}">${resIcon} ${t.result.replace('_', ' ')}</td>
+      <td style="color:${pnlC}">${t.pnl_pips >= 0 ? '+' : ''}${t.pnl_pips}</td>
+      <td style="color:${pnlC};font-weight:600">${t.pnl_eur >= 0 ? '+' : ''}${t.pnl_eur.toFixed(2)}€</td>
+      <td>${t.lot_size}</td>
+      <td>${t.bars_to_exit}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ── Documentation ───────────────────────────────────────────────────────

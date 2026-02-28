@@ -1124,6 +1124,71 @@ def get_train_status(lines: int = Query(150, le=500)):
         raise HTTPException(500, str(e))
 
 
+# ── /api/backtest — Backtesting visual ───────────────────────────────
+
+class BacktestRequest(BaseModel):
+    pairs: List[str] = ["EURUSD", "GBPUSD", "USDJPY", "EURJPY", "XAUUSD"]
+    timeframes: List[str] = ["M15", "H1", "H4"]
+    days: int = 90
+    min_confidence: float = 0.54
+
+
+@app.post("/api/backtest/run")
+def api_backtest_run(req: BacktestRequest):
+    """
+    Ejecuta backtest sobre señales históricas y devuelve el informe completo.
+    """
+    from dataclasses import asdict
+    try:
+        from src.backtest.engine import run_backtest
+
+        report = run_backtest(
+            pairs=req.pairs,
+            timeframes=req.timeframes,
+            days=req.days,
+            min_confidence=req.min_confidence,
+        )
+        data = asdict(report)
+        # Convertir inf a null para JSON válido
+        if isinstance(data.get("profit_factor"), float) and math.isinf(data["profit_factor"]):
+            data["profit_factor"] = None
+        return JSONResponse(content=json.loads(json.dumps(data, cls=NaNSafeEncoder, default=str)))
+
+    except Exception as e:
+        logger.error(f"/api/backtest/run error: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/backtest/quick-stats")
+def api_backtest_quick_stats():
+    """
+    Estadísticas rápidas: cuántas señales hay disponibles para backtest por par/TF.
+    """
+    try:
+        with create_engine(DATABASE_URL).connect() as conn:
+            rows = conn.execute(text("""
+                SELECT pair, timeframe,
+                       COUNT(*) as total,
+                       MIN(timestamp) as first_signal,
+                       MAX(timestamp) as last_signal
+                FROM signals
+                WHERE direction != 0 AND filter_reason IS NULL
+                GROUP BY pair, timeframe
+                ORDER BY pair, timeframe
+            """)).fetchall()
+        stats = []
+        for r in rows:
+            stats.append({
+                "pair": r[0], "timeframe": r[1], "total": r[2],
+                "first": str(r[3]) if r[3] else None,
+                "last": str(r[4]) if r[4] else None,
+            })
+        return {"stats": stats, "has_signals": len(stats) > 0}
+    except Exception as e:
+        logger.error(f"/api/backtest/quick-stats error: {e}")
+        return {"stats": [], "has_signals": False, "error": str(e)}
+
+
 # ── /api/docs — Documentación dinámica ──────────────────────────────────
 
 DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"

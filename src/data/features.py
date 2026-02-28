@@ -279,6 +279,7 @@ def process_pair_timeframe(pair: str, timeframe: str, engine) -> int:
     # Columnas a guardar en BD
     cols = [
         "pair", "timeframe", "timestamp",
+        "close", "high", "low",
         "ema_20", "ema_50", "ema_200",
         "macd_line", "macd_signal", "macd_hist",
         "adx", "adx_pos", "adx_neg",

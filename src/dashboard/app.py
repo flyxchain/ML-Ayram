@@ -938,6 +938,192 @@ def get_correlations(
         raise HTTPException(500, str(e))
 
 
+# ── /api/train/status — Estado del entrenamiento ─────────────────────────────
+
+MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models" / "saved"
+
+
+@app.get("/api/train/status")
+def get_train_status(lines: int = Query(150, le=500)):
+    """
+    Estado en tiempo real del entrenamiento:
+    - Estado del servicio systemd
+    - Logs recientes parseados
+    - Progreso (modelos completados / total)
+    - Modelo actual y época
+    """
+    try:
+        # 1. Estado systemd
+        svc_status = "unknown"
+        svc_since = None
+        try:
+            r = subprocess.run(
+                ["systemctl", "is-active", "ayram-train.service"],
+                capture_output=True, text=True, timeout=5,
+            )
+            svc_status = r.stdout.strip()  # active / inactive / failed
+
+            if svc_status == "active":
+                r2 = subprocess.run(
+                    ["systemctl", "show", "ayram-train.service",
+                     "--property=ActiveEnterTimestamp"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                for line in r2.stdout.strip().split("\n"):
+                    if line.startswith("ActiveEnterTimestamp="):
+                        val = line.split("=", 1)[1]
+                        if val and val != "n/a":
+                            svc_since = val
+        except Exception:
+            pass
+
+        # 2. Leer logs de journalctl
+        log_lines = []
+        try:
+            r = subprocess.run(
+                ["journalctl", "-u", "ayram-train.service",
+                 "--no-pager", "-n", str(lines), "--output=short-iso"],
+                capture_output=True, text=True, timeout=10,
+            )
+            log_lines = r.stdout.strip().split("\n") if r.stdout.strip() else []
+        except Exception:
+            pass
+
+        # 3. Parsear logs para extraer progreso
+        import re
+
+        pairs = ["EURUSD", "GBPUSD", "USDJPY", "EURJPY", "XAUUSD"]
+        timeframes = ["M15", "H1", "H4"]
+        total_models = len(pairs) * len(timeframes) * 2  # XGB + LSTM = 30
+
+        completed_models = []   # {type, pair, tf, f1, timestamp}
+        current_model = None    # {type, pair, tf}
+        current_epoch = None    # {epoch, total, val_f1}
+        last_cv_f1 = None
+        training_started = None
+        errors = []
+
+        for line in log_lines:
+            # Inicio de entrenamiento
+            m = re.search(r"ML-Ayram.*inicio de entrenamiento", line)
+            if m:
+                training_started = line[:25].strip()  # timestamp aprox
+                completed_models = []
+                current_model = None
+                current_epoch = None
+
+            # XGB iniciado
+            m = re.search(r"\[XGB\]\s+(\w+)\s+(\w+)\s+\((\d+) filas", line)
+            if m:
+                current_model = {"type": "XGBoost", "pair": m.group(1),
+                                 "tf": m.group(2), "rows": int(m.group(3))}
+                current_epoch = None
+
+            # LSTM iniciado
+            m = re.search(r"\[LSTM\]\s+(\w+)\s+(\w+)\s+\((\d+) filas", line)
+            if m:
+                current_model = {"type": "LSTM", "pair": m.group(1),
+                                 "tf": m.group(2), "rows": int(m.group(3))}
+                current_epoch = None
+
+            # CV F1 (XGBoost completado)
+            m = re.search(r"CV F1 promedio:\s+([\d.]+)", line)
+            if m:
+                last_cv_f1 = float(m.group(1))
+
+            # Modelo XGB guardado
+            m = re.search(r"Modelo guardado:.*xgb_(\w+)_(\w+)_", line)
+            if m:
+                completed_models.append({
+                    "type": "XGBoost", "pair": m.group(1), "tf": m.group(2),
+                    "f1": last_cv_f1, "timestamp": line[:25].strip(),
+                })
+                current_model = None
+                last_cv_f1 = None
+
+            # Modelo LSTM guardado
+            m = re.search(r"Modelo guardado:.*lstm_(\w+)_(\w+)_", line)
+            if m:
+                completed_models.append({
+                    "type": "LSTM", "pair": m.group(1), "tf": m.group(2),
+                    "f1": last_cv_f1, "timestamp": line[:25].strip(),
+                })
+                current_model = None
+                last_cv_f1 = None
+
+            # Época LSTM
+            m = re.search(r"Epoch\s+(\d+)/(\d+).*val_f1[=:]\s*([\d.]+)", line)
+            if m:
+                current_epoch = {
+                    "epoch": int(m.group(1)),
+                    "total": int(m.group(2)),
+                    "val_f1": float(m.group(3)),
+                }
+
+            # Fold XGB
+            m = re.search(r"Fold\s+(\d+)/(\d+).*F1.*?([\d.]+)", line)
+            if m:
+                current_epoch = {
+                    "fold": int(m.group(1)),
+                    "total": int(m.group(2)),
+                    "f1": float(m.group(3)),
+                }
+
+            # Errores
+            if "ERROR" in line or "Traceback" in line or "Exception" in line:
+                errors.append(line.strip())
+
+        # 4. Modelos recientes en disco
+        recent_files = []
+        if MODELS_DIR.exists():
+            model_files = sorted(MODELS_DIR.glob("*.*"), key=lambda f: f.stat().st_mtime, reverse=True)
+            for mf in model_files[:20]:
+                recent_files.append({
+                    "name": mf.name,
+                    "size_kb": round(mf.stat().st_size / 1024, 1),
+                    "modified": datetime.fromtimestamp(
+                        mf.stat().st_mtime, tz=timezone.utc
+                    ).isoformat(),
+                })
+
+        # 5. Progreso global
+        done = len(completed_models)
+        progress_pct = round(done / total_models * 100, 1) if total_models > 0 else 0
+
+        # Elapsed time
+        elapsed = None
+        if svc_status == "active" and svc_since:
+            try:
+                # Parse systemd timestamp
+                start = pd.to_datetime(svc_since, utc=True)
+                elapsed_sec = (datetime.now(timezone.utc) - start).total_seconds()
+                hours = int(elapsed_sec // 3600)
+                mins = int((elapsed_sec % 3600) // 60)
+                elapsed = f"{hours}h {mins}m"
+            except Exception:
+                pass
+
+        return _safe_json({
+            "server_time":     datetime.now(timezone.utc).isoformat(),
+            "service_status":  svc_status,
+            "service_since":   svc_since,
+            "elapsed":         elapsed,
+            "training_started": training_started,
+            "total_models":    total_models,
+            "completed":       done,
+            "progress_pct":    progress_pct,
+            "current_model":   current_model,
+            "current_epoch":   current_epoch,
+            "completed_models": completed_models,
+            "recent_files":    recent_files,
+            "errors":          errors[-10:],  # últimos 10
+            "log_tail":        log_lines[-50:],  # últimas 50 líneas
+        })
+    except Exception as e:
+        logger.error(f"/api/train/status error: {e}")
+        raise HTTPException(500, str(e))
+
+
 # ── /api/config ───────────────────────────────────────────────────────────────
 
 @app.get("/api/config")

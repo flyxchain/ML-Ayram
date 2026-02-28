@@ -184,6 +184,34 @@
   .corr-legend-bar { width: 120px; height: 10px; border-radius: 3px;
     background: linear-gradient(90deg, #f85149, #f8514944, #161b22, #3fb95044, #3fb950); }
 
+  /* ── Training monitor ────────────────────────────────── */
+  .train-progress-outer { width: 100%; height: 24px; background: var(--border); border-radius: 12px; overflow: hidden; position: relative; }
+  .train-progress-inner { height: 100%; border-radius: 12px; transition: width .5s ease; display: flex; align-items: center; justify-content: center;
+                          font-size: 11px; font-weight: 700; color: #0d1117; min-width: 40px; }
+  .train-status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+                        border-radius: 20px; font-size: 13px; font-weight: 600; }
+  .train-running  { background: #58a6ff22; color: var(--blue); border: 1px solid #58a6ff44; }
+  .train-inactive { background: #8b949e22; color: var(--muted); border: 1px solid #8b949e44; }
+  .train-failed   { background: #f8514922; color: var(--red); border: 1px solid #f8514944; }
+  .train-model-card { display: flex; align-items: center; gap: 16px; padding: 16px; background: #0d1117;
+                      border: 1px solid var(--border); border-radius: var(--radius); }
+  .train-model-icon { font-size: 32px; }
+  .train-model-info { flex: 1; }
+  .train-model-name { font-size: 16px; font-weight: 700; }
+  .train-model-detail { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .train-log { background: #010409; border: 1px solid var(--border); border-radius: var(--radius);
+               padding: 12px; max-height: 400px; overflow-y: auto; font-family: 'JetBrains Mono', 'Fira Code', monospace;
+               font-size: 11px; line-height: 1.6; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
+  .train-log .log-info    { color: var(--blue); }
+  .train-log .log-success { color: var(--green); }
+  .train-log .log-warning { color: var(--yellow); }
+  .train-log .log-error   { color: var(--red); }
+  .completed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+  .completed-chip { padding: 8px 12px; border-radius: var(--radius); background: #0d1117;
+                    border: 1px solid var(--border); font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+  .completed-chip .chip-type { font-weight: 600; }
+  .completed-chip .chip-f1 { color: var(--green); font-weight: 600; }
+
   @media(max-width:900px) {
     .grid-4,.grid-3 { grid-template-columns: 1fr 1fr; }
     .config-grid,.grid-2 { grid-template-columns: 1fr; }
@@ -207,6 +235,7 @@
     <button class="nav-link"         onclick="showPage('performance',this)">Rendimiento</button>
     <button class="nav-link"         onclick="showPage('monitor',this)">Monitor</button>
     <button class="nav-link"         onclick="showPage('market',this)">Mercado</button>
+    <button class="nav-link"         onclick="showPage('train',this)">Train</button>
     <button class="nav-link"         onclick="showPage('bot',this)">Bot</button>
     <button class="nav-link"         onclick="showPage('config',this)">Señales</button>
   </div>
@@ -628,6 +657,105 @@
   </div>
 </div>
 
+<!-- ══════════ TRAIN ══════════ -->
+<div id="page-train" class="page">
+  <div class="section-header" style="margin-bottom:20px">
+    <div style="display:flex;align-items:center;gap:16px">
+      <span class="section-title">🧠 Entrenamiento de modelos</span>
+      <span id="train-badge" class="train-status-badge train-inactive">⚪ Inactivo</span>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span id="train-elapsed" style="color:var(--muted);font-size:12px"></span>
+      <button class="btn btn-ghost" onclick="loadTrain()">↻ Actualizar</button>
+      <label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">
+        <input type="checkbox" id="train-auto" checked> Auto 10s
+      </label>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="grid-4">
+    <div class="card">
+      <div class="card-title">Progreso</div>
+      <div class="card-value blue" id="train-progress-val">—</div>
+      <div class="card-sub" id="train-progress-sub">modelos completados</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Modelo actual</div>
+      <div class="card-value" id="train-current" style="font-size:18px">—</div>
+      <div class="card-sub" id="train-current-sub"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Época / Fold actual</div>
+      <div class="card-value yellow" id="train-epoch">—</div>
+      <div class="card-sub" id="train-epoch-sub"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Modelos en disco</div>
+      <div class="card-value purple" id="train-files-count">—</div>
+      <div class="card-sub">archivos en models/saved/</div>
+    </div>
+  </div>
+
+  <!-- Barra de progreso -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:12px">Progreso global</div>
+    <div class="train-progress-outer">
+      <div class="train-progress-inner" id="train-progress-bar" style="width:0%;background:var(--blue)">0%</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--muted)">
+      <span id="train-progress-label">0 / 30 modelos</span>
+      <span id="train-started-label"></span>
+    </div>
+  </div>
+
+  <!-- Modelo actual detallado -->
+  <div class="card" style="margin-bottom:16px" id="train-current-card">
+    <div class="section-title" style="margin-bottom:12px">📡 Modelo en entrenamiento</div>
+    <div class="train-model-card" id="train-current-detail">
+      <div style="text-align:center;color:var(--muted)">Esperando datos...</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Modelos completados -->
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px">✅ Completados en esta sesión</div>
+      <div class="completed-grid" id="train-completed">
+        <div style="color:var(--muted);font-size:13px">Ningún modelo completado aún</div>
+      </div>
+    </div>
+
+    <!-- Archivos recientes -->
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px">📁 Modelos recientes en disco</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Archivo</th><th>Tamaño</th><th>Modificado</th></tr></thead>
+          <tbody id="train-files-tbody">
+            <tr><td colspan="3" style="color:var(--muted);text-align:center">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Errores -->
+  <div class="card" style="margin-bottom:16px;display:none" id="train-errors-card">
+    <div class="section-title" style="margin-bottom:12px;color:var(--red)">🛑 Errores detectados</div>
+    <div class="train-log" id="train-errors-log"></div>
+  </div>
+
+  <!-- Log en vivo -->
+  <div class="card">
+    <div class="section-header">
+      <span class="section-title">📝 Log en vivo (journalctl)</span>
+      <span style="color:var(--muted);font-size:11px">Últimas 50 líneas</span>
+    </div>
+    <div class="train-log" id="train-log"></div>
+  </div>
+</div>
+
 <!-- ══════════ BOT CONFIG ══════════ -->
 <div id="page-bot" class="page">
   <div class="card" style="max-width:800px">
@@ -764,7 +892,7 @@ function showPage(name, btn) {
   const loaders = {
     chart: loadChart, history: () => loadHistory(1), metrics: loadMetrics,
     performance: loadPerformance, monitor: loadMonitor, config: loadConfig,
-    pipeline: loadPipeline, bot: loadBotConfig, market: loadMarket,
+    pipeline: loadPipeline, bot: loadBotConfig, market: loadMarket, train: loadTrain,
   };
   if (loaders[name]) loaders[name]();
 }
@@ -1536,6 +1664,174 @@ async function loadMonitor() {
 }
 
 // ── Config señales ────────────────────────────────────────────────────────
+// ── Training monitor ─────────────────────────────────────────────────────
+let _trainInterval = null;
+
+async function loadTrain() {
+  try {
+    const resp = await fetch('/api/train/status');
+    if (!resp.ok) {
+      document.getElementById('train-log').textContent =
+        `⚠️ Endpoint /api/train/status no disponible (HTTP ${resp.status}).\nDespliega la última versión de app.py.`;
+      return;
+    }
+    const d = await resp.json();
+
+    // Badge de estado
+    const badge = document.getElementById('train-badge');
+    if (d.service_status === 'active') {
+      badge.className = 'train-status-badge train-running';
+      badge.innerHTML = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--blue);animation:pulse 1.5s infinite"></span> Entrenando';
+    } else if (d.service_status === 'failed') {
+      badge.className = 'train-status-badge train-failed';
+      badge.textContent = '❌ Fallido';
+    } else {
+      badge.className = 'train-status-badge train-inactive';
+      badge.textContent = '⚪ Inactivo';
+    }
+
+    // Elapsed
+    document.getElementById('train-elapsed').textContent = d.elapsed ? `⏱ ${d.elapsed}` : '';
+
+    // KPIs
+    document.getElementById('train-progress-val').textContent = `${d.completed}/${d.total_models}`;
+    document.getElementById('train-progress-sub').textContent = `${d.progress_pct}% completado`;
+    document.getElementById('train-files-count').textContent = d.recent_files?.length || 0;
+
+    // Current model KPI
+    const curEl = document.getElementById('train-current');
+    if (d.current_model) {
+      curEl.textContent = `${d.current_model.type}`;
+      document.getElementById('train-current-sub').textContent =
+        `${d.current_model.pair} ${d.current_model.tf}` + (d.current_model.rows ? ` (${d.current_model.rows.toLocaleString()} filas)` : '');
+    } else {
+      curEl.textContent = d.service_status === 'active' ? 'Cargando...' : '—';
+      document.getElementById('train-current-sub').textContent = '';
+    }
+
+    // Epoch KPI
+    const epochEl = document.getElementById('train-epoch');
+    if (d.current_epoch) {
+      if (d.current_epoch.epoch) {
+        epochEl.textContent = `${d.current_epoch.epoch}/${d.current_epoch.total}`;
+        document.getElementById('train-epoch-sub').textContent = `val_f1: ${d.current_epoch.val_f1?.toFixed(4) || '—'}`;
+      } else if (d.current_epoch.fold) {
+        epochEl.textContent = `Fold ${d.current_epoch.fold}/${d.current_epoch.total}`;
+        document.getElementById('train-epoch-sub').textContent = `F1: ${d.current_epoch.f1?.toFixed(4) || '—'}`;
+      }
+    } else {
+      epochEl.textContent = '—';
+      document.getElementById('train-epoch-sub').textContent = '';
+    }
+
+    // Progress bar
+    const pBar = document.getElementById('train-progress-bar');
+    pBar.style.width = `${Math.max(d.progress_pct, 2)}%`;
+    pBar.textContent = `${d.progress_pct}%`;
+    pBar.style.background = d.progress_pct >= 100 ? 'var(--green)' : 'var(--blue)';
+    document.getElementById('train-progress-label').textContent = `${d.completed} / ${d.total_models} modelos`;
+    document.getElementById('train-started-label').textContent = d.training_started ? `Inicio: ${d.training_started}` : '';
+
+    // Current model card
+    const detailEl = document.getElementById('train-current-detail');
+    if (d.current_model) {
+      const icon = d.current_model.type === 'LSTM' ? '🧠' : '🌲';
+      let epochInfo = '';
+      if (d.current_epoch) {
+        if (d.current_epoch.epoch) {
+          const epPct = Math.round(d.current_epoch.epoch / d.current_epoch.total * 100);
+          epochInfo = `<div style="margin-top:8px"><div class="train-progress-outer" style="height:16px">
+            <div class="train-progress-inner" style="width:${epPct}%;background:var(--yellow)">${d.current_epoch.epoch}/${d.current_epoch.total}</div>
+          </div><div style="font-size:11px;color:var(--muted);margin-top:4px">val_f1: ${d.current_epoch.val_f1?.toFixed(4) || '—'}</div></div>`;
+        } else if (d.current_epoch.fold) {
+          epochInfo = `<div style="margin-top:8px;font-size:12px;color:var(--muted)">Fold ${d.current_epoch.fold}/${d.current_epoch.total} — F1: <span style="color:var(--green)">${d.current_epoch.f1?.toFixed(4)}</span></div>`;
+        }
+      }
+      detailEl.innerHTML = `
+        <div class="train-model-icon">${icon}</div>
+        <div class="train-model-info">
+          <div class="train-model-name">${d.current_model.type} — ${d.current_model.pair} ${d.current_model.tf}</div>
+          <div class="train-model-detail">${d.current_model.rows ? d.current_model.rows.toLocaleString() + ' filas de datos' : 'Cargando dataset...'}</div>
+          ${epochInfo}
+        </div>`;
+    } else if (d.service_status === 'active') {
+      detailEl.innerHTML = '<div style="color:var(--muted)">Preparando siguiente modelo...</div>';
+    } else {
+      detailEl.innerHTML = '<div style="color:var(--muted)">Servicio no activo</div>';
+    }
+
+    // Completed models
+    const compEl = document.getElementById('train-completed');
+    if (d.completed_models && d.completed_models.length > 0) {
+      compEl.innerHTML = d.completed_models.map(m => {
+        const icon = m.type === 'LSTM' ? '🧠' : '🌲';
+        const f1 = m.f1 ? m.f1.toFixed(4) : '—';
+        return `<div class="completed-chip">
+          <span class="chip-type">${icon} ${m.pair} ${m.tf}</span>
+          <span class="chip-f1">F1: ${f1}</span>
+        </div>`;
+      }).join('');
+    } else {
+      compEl.innerHTML = '<div style="color:var(--muted);font-size:13px">Ningún modelo completado aún</div>';
+    }
+
+    // Files table
+    const tbody = document.getElementById('train-files-tbody');
+    if (d.recent_files && d.recent_files.length > 0) {
+      tbody.innerHTML = d.recent_files.map(f => {
+        const mod = f.modified ? new Date(f.modified).toLocaleString() : '—';
+        const isRecent = f.modified && (Date.now() - new Date(f.modified).getTime()) < 3600000;
+        return `<tr>
+          <td style="font-size:11px;font-family:monospace">${f.name}${isRecent ? ' 🆕' : ''}</td>
+          <td>${f.size_kb} KB</td>
+          <td style="font-size:11px">${mod}</td>
+        </tr>`;
+      }).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);text-align:center">Sin archivos</td></tr>';
+    }
+
+    // Errors
+    const errCard = document.getElementById('train-errors-card');
+    if (d.errors && d.errors.length > 0) {
+      errCard.style.display = 'block';
+      document.getElementById('train-errors-log').innerHTML =
+        d.errors.map(e => `<span class="log-error">${e}</span>`).join('\n');
+    } else {
+      errCard.style.display = 'none';
+    }
+
+    // Log tail
+    const logEl = document.getElementById('train-log');
+    if (d.log_tail && d.log_tail.length > 0) {
+      logEl.innerHTML = d.log_tail.map(line => {
+        let cls = '';
+        if (line.includes('ERROR') || line.includes('Traceback')) cls = 'log-error';
+        else if (line.includes('guardado') || line.includes('completado') || line.includes('saved')) cls = 'log-success';
+        else if (line.includes('WARNING') || line.includes('FutureWarning')) cls = 'log-warning';
+        else if (line.includes('Epoch') || line.includes('Fold') || line.includes('[XGB]') || line.includes('[LSTM]')) cls = 'log-info';
+        return cls ? `<span class="${cls}">${line}</span>` : line;
+      }).join('\n');
+      logEl.scrollTop = logEl.scrollHeight;
+    } else {
+      logEl.textContent = 'Sin logs disponibles';
+    }
+
+  } catch(e) {
+    document.getElementById('train-log').textContent = `Error cargando estado: ${e.message}`;
+  }
+
+  // Auto-refresh
+  clearInterval(_trainInterval);
+  if (document.getElementById('train-auto')?.checked) {
+    _trainInterval = setInterval(() => {
+      if (document.getElementById('page-train').classList.contains('active')) loadTrain();
+      else clearInterval(_trainInterval);
+    }, 10000);
+  }
+}
+
+// ── Config señales ───────────────────────────────────────────────────────
 async function loadConfig() {
   const cfg = await fetch('/api/config').then(r=>r.json());
   document.getElementById('cfg-confidence').value = Math.round(cfg.min_confidence*100);

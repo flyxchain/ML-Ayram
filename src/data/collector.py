@@ -109,22 +109,146 @@ def fetch_daily(pair: str, from_dt: datetime, to_dt: datetime) -> pd.DataFrame:
     return df[["pair", "timeframe", "timestamp", "open", "high", "low", "close", "volume"]]
 
 
-def resample_h4(df_h1: pd.DataFrame) -> pd.DataFrame:
-    """Construye H4 desde H1."""
+# ── Resampleo inteligente con validación de completitud ───────────────────
+#
+# Regla: una vela resampleada solo se genera si:
+#   - Histórica → tiene TODAS las sub-velas esperadas (4 M15 para H1, 4 H1 para H4)
+#   - En formación (periodo actual) → se genera con lo que haya, es la vela "viva"
+# Esto evita fabricar datos falsos pero permite mostrar la vela en curso.
+
+def _is_current_period(period_start, freq_minutes: int) -> bool:
+    """¿El periodo que empieza en period_start aún no ha cerrado?"""
+    now = _utcnow()
+    ts = pd.Timestamp(period_start)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    period_end = ts + pd.Timedelta(minutes=freq_minutes)
+    return ts <= pd.Timestamp(now) < period_end
+
+
+def resample_m15_to_h1(df_m15: pd.DataFrame, pair: str) -> pd.DataFrame:
+    """
+    Construye H1 desde M15.
+    - Histórica: requiere 4 sub-velas (:00, :15, :30, :45)
+    - En formación: genera con las que haya
+    """
+    df = df_m15.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    df = df.dropna(subset=["open", "high", "low", "close"])
+    if df.empty:
+        return pd.DataFrame()
+
+    df = df.sort_values("timestamp")
+    df["hour"] = df["timestamp"].dt.floor("h")
+
+    rows = []
+    for hour, g in df.groupby("hour"):
+        is_current = _is_current_period(hour, 60)
+        n = len(g)
+
+        # Validar alineación: solo minutos :00, :15, :30, :45
+        valid_minutes = g["timestamp"].dt.minute.isin([0, 15, 30, 45])
+        g = g[valid_minutes]
+        if g.empty:
+            continue
+
+        # Histórica incompleta → no generar
+        if not is_current and len(g) < 4:
+            continue
+
+        g_sorted = g.sort_values("timestamp")
+        rows.append({
+            "pair": pair, "timeframe": "H1", "timestamp": hour,
+            "open":   g_sorted.iloc[0]["open"],
+            "high":   g["high"].max(),
+            "low":    g["low"].min(),
+            "close":  g_sorted.iloc[-1]["close"],
+            "volume": g["volume"].sum() if g["volume"].notna().any() else None,
+        })
+
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+def resample_h4(df_h1: pd.DataFrame, pair: str = None) -> pd.DataFrame:
+    """
+    Construye H4 desde H1.
+    Bloques alineados: 00-03, 04-07, 08-11, 12-15, 16-19, 20-23.
+    - Histórica: requiere 4 H1 por bloque
+    - En formación: genera con las que haya
+    """
     df = df_h1.copy()
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df = df.set_index("timestamp")
-    df4 = df.resample("4h").agg({
-        "open":   "first",
-        "high":   "max",
-        "low":    "min",
-        "close":  "last",
-        "volume": "sum",
-    }).dropna(subset=["open"])
-    df4 = df4.reset_index()
-    df4["pair"]      = df_h1["pair"].iloc[0]
-    df4["timeframe"] = "H4"
-    return df4[["pair", "timeframe", "timestamp", "open", "high", "low", "close", "volume"]]
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    df = df.dropna(subset=["open", "high", "low", "close"])
+    if df.empty:
+        return pd.DataFrame()
+
+    _pair = pair or df["pair"].iloc[0]
+    df = df.sort_values("timestamp")
+    df["block"] = df["timestamp"].dt.floor("4h")
+
+    rows = []
+    for block, g in df.groupby("block"):
+        is_current = _is_current_period(block, 240)
+
+        # Validar: solo horas dentro del bloque correcto
+        valid_hours = g["timestamp"].dt.hour.isin(
+            [block.hour + i for i in range(4)]
+        )
+        g = g[valid_hours]
+        if g.empty:
+            continue
+
+        if not is_current and len(g) < 4:
+            continue
+
+        g_sorted = g.sort_values("timestamp")
+        rows.append({
+            "pair": _pair, "timeframe": "H4", "timestamp": block,
+            "open":   g_sorted.iloc[0]["open"],
+            "high":   g["high"].max(),
+            "low":    g["low"].min(),
+            "close":  g_sorted.iloc[-1]["close"],
+            "volume": g["volume"].sum() if g["volume"].notna().any() else None,
+        })
+
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+def resample_h1_to_d1(df_h1: pd.DataFrame, pair: str) -> pd.DataFrame:
+    """
+    Construye D1 desde H1.
+    Un día forex va de 00:00 a 23:00 UTC (24 velas H1).
+    - Histórica: requiere al menos 20 H1 (permite huecos nocturnos)
+    - En formación: genera con las que haya
+    """
+    df = df_h1.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    df = df.dropna(subset=["open", "high", "low", "close"])
+    if df.empty:
+        return pd.DataFrame()
+
+    df = df.sort_values("timestamp")
+    df["day"] = df["timestamp"].dt.floor("D")
+
+    rows = []
+    for day, g in df.groupby("day"):
+        is_current = _is_current_period(day, 1440)
+
+        # Forex tiene ~21-24 velas H1 por día (cierra viernes noche)
+        if not is_current and len(g) < 20:
+            continue
+
+        g_sorted = g.sort_values("timestamp")
+        rows.append({
+            "pair": pair, "timeframe": "D1", "timestamp": day,
+            "open":   g_sorted.iloc[0]["open"],
+            "high":   g["high"].max(),
+            "low":    g["low"].min(),
+            "close":  g_sorted.iloc[-1]["close"],
+            "volume": g["volume"].sum() if g["volume"].notna().any() else None,
+        })
+
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
 def save_to_db(df: pd.DataFrame, engine) -> int:
@@ -168,6 +292,19 @@ def download_historical(years: int = 3):
                 try:
                     df = fetch_intraday(pair, interval, chunk_start, chunk_end)
                     df["timeframe"] = tf
+
+                    # FALLBACK: si EODHD no tiene H1 (ej: XAUUSD), resamplear desde M15
+                    if df.empty and tf == "H1":
+                        logger.info(f"  {pair} H1: EODHD vacío, resampleando desde M15...")
+                        df_m15 = pd.read_sql(
+                            text("SELECT * FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'M15' AND timestamp >= :f AND timestamp < :t ORDER BY timestamp"),
+                            engine,
+                            params={"pair": pair, "f": str(chunk_start), "t": str(chunk_end)},
+                        )
+                        if not df_m15.empty:
+                            df = resample_m15_to_h1(df_m15, pair)
+                            logger.info(f"  {pair} H1: resampleadas {len(df)} velas desde M15")
+
                     saved = save_to_db(df, engine)
                     total += saved
                     logger.info(f"  {tf} {chunk_start.date()}→{chunk_end.date()}: {len(df)} velas, {saved} nuevas")
@@ -184,7 +321,7 @@ def download_historical(years: int = 3):
                 params={"pair": pair},
             )
             if not df_h1.empty:
-                df_h4 = resample_h4(df_h1)
+                df_h4 = resample_h4(df_h1, pair)
                 saved = save_to_db(df_h4, engine)
                 total += saved
                 logger.info(f"  H4 construido desde H1: {len(df_h4)} velas, {saved} nuevas")
@@ -268,6 +405,20 @@ def download_incremental():
             try:
                 df = fetch_intraday(pair, interval, from_dt, to_dt)
                 df["timeframe"] = tf
+
+                # FALLBACK: si EODHD devuelve vacío para H1, resamplear desde M15
+                if df.empty and tf == "H1":
+                    logger.info(f"  {pair} H1: EODHD vacío, resampleando desde M15...")
+                    m15_from = from_dt - timedelta(hours=1)  # margen extra
+                    df_m15 = pd.read_sql(
+                        text("SELECT * FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'M15' AND timestamp >= :from_ts ORDER BY timestamp"),
+                        engine,
+                        params={"pair": pair, "from_ts": str(m15_from)},
+                    )
+                    if not df_m15.empty:
+                        df = resample_m15_to_h1(df_m15, pair)
+                        logger.info(f"  {pair} H1: resampleadas {len(df)} velas desde M15")
+
                 saved = save_to_db(df, engine)
                 total += saved
                 if saved:
@@ -276,7 +427,7 @@ def download_incremental():
                 logger.error(f"  Error {pair} {tf}: {e}")
             time.sleep(0.3)
 
-        # ── H4 (reconstruido desde H1) ───────────────────────────
+        # ── H4 (reconstruido desde H1, con validación de completitud) ─────
         try:
             with engine.connect() as conn:
                 last_h4 = conn.execute(
@@ -294,13 +445,15 @@ def download_incremental():
                 params={"pair": pair, "from_ts": str(h1_from)},
             )
             if not df_h1_recent.empty:
-                df_h4  = resample_h4(df_h1_recent)
+                df_h4  = resample_h4(df_h1_recent, pair)
                 saved  = save_to_db(df_h4, engine)
                 total += saved
+                if saved:
+                    logger.info(f"  {pair} H4: +{saved} velas nuevas (desde H1)")
         except Exception as e:
             logger.error(f"  Error H4 {pair}: {e}")
 
-        # ── D1 (diario) ──────────────────────────────────────────
+        # ── D1 (diario, con fallback desde H1) ─────────────────────────
         try:
             with engine.connect() as conn:
                 row = conn.execute(
@@ -316,6 +469,19 @@ def download_incremental():
                     continue  # D1 no necesita actualizarse tan a menudo
 
             df_d1 = fetch_daily(pair, d1_from, to_dt)
+
+            # FALLBACK: si EODHD devuelve vacío para D1, resamplear desde H1
+            if df_d1.empty:
+                logger.info(f"  {pair} D1: EODHD vacío, resampleando desde H1...")
+                df_h1_for_d1 = pd.read_sql(
+                    text("SELECT * FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'H1' AND timestamp >= :from_ts ORDER BY timestamp"),
+                    engine,
+                    params={"pair": pair, "from_ts": str(d1_from)},
+                )
+                if not df_h1_for_d1.empty:
+                    df_d1 = resample_h1_to_d1(df_h1_for_d1, pair)
+                    logger.info(f"  {pair} D1: resampleadas {len(df_d1)} velas desde H1")
+
             saved = save_to_db(df_d1, engine)
             total += saved
             if saved:

@@ -74,7 +74,38 @@ STATIC_DIR   = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 RESULTS_DIR  = Path(__file__).resolve().parent.parent.parent / "results"
 
-app    = FastAPI(title="ML-Ayram Dashboard", version="2.0.0")
+# ── OpenAPI tags ──────────────────────────────────────────────────────────────
+TAGS_META = [
+    {"name": "Status",        "description": "Estado general del sistema, servicios y pipeline."},
+    {"name": "Signals",       "description": "Señales de trading generadas por el ensemble ML."},
+    {"name": "Charts",        "description": "Datos OHLCV y señales para gráficos interactivos."},
+    {"name": "Performance",   "description": "Métricas de rendimiento, posiciones abiertas y backtest."},
+    {"name": "Monitoring",    "description": "Frescura de datos, salud de modelos y anomalías."},
+    {"name": "Training",      "description": "Estado en tiempo real del entrenamiento ML."},
+    {"name": "Notifications", "description": "Historial de notificaciones Telegram y reglas de alerta."},
+    {"name": "Config",        "description": "Configuración de filtros del generador y bot."},
+    {"name": "Docs",          "description": "Documentación del proyecto en formato Markdown."},
+]
+
+app = FastAPI(
+    title="ML-Ayram Trading API",
+    version="2.1.0",
+    description=(
+        "API del sistema de trading algorítmico ML-Ayram.\n\n"
+        "Combina modelos XGBoost + LSTM con filtros técnicos para generar "
+        "señales de forex (EURUSD, GBPUSD, USDJPY, EURJPY, XAUUSD) "
+        "en timeframes M15, H1 y H4.\n\n"
+        "**Componentes principales:**\n"
+        "- 📡 Generación de señales con ensemble ML\n"
+        "- 📊 Backtest sobre señales históricas\n"
+        "- 🚨 Monitoreo y detección de anomalías\n"
+        "- 🔔 Notificaciones Telegram con reglas configurables\n"
+        "- 🏋️ Entrenamiento automático semanal"
+    ),
+    openapi_tags=TAGS_META,
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 
@@ -185,7 +216,8 @@ def _latest_result_meta(prefix: str) -> dict:
 
 # ── /api/status ───────────────────────────────────────────────────────────────
 
-@app.get("/api/status")
+@app.get("/api/status", tags=["Status"], summary="Estado general del sistema",
+         description="Resumen de señales (24h/7d), último modelo entrenado, última señal y estado del mercado forex.")
 def get_status():
     try:
         total_signals = int(_query("SELECT COUNT(*) AS n FROM signals").iloc[0]["n"])
@@ -223,8 +255,9 @@ def get_status():
 
 # ── /api/signals/latest ───────────────────────────────────────────────────────
 
-@app.get("/api/signals/latest")
-def get_latest_signals(limit: int = Query(20, le=100)):
+@app.get("/api/signals/latest", tags=["Signals"], summary="Señales más recientes",
+         description="Devuelve las últimas N señales ordenadas por timestamp descendente, incluyendo filtradas y válidas.")
+def get_latest_signals(limit: int = Query(20, le=100, description="Máximo de señales a devolver")):
     try:
         df = _query(
             "SELECT * FROM signals ORDER BY timestamp DESC LIMIT :limit",
@@ -238,7 +271,8 @@ def get_latest_signals(limit: int = Query(20, le=100)):
 
 # ── /api/signals/history ──────────────────────────────────────────────────────
 
-@app.get("/api/signals/history")
+@app.get("/api/signals/history", tags=["Signals"], summary="Historial de señales paginado",
+         description="Historial completo de señales con filtros por par, timeframe, dirección y período. Soporta paginación con offset/limit.")
 def get_signal_history(
     pair:      Optional[str] = None,
     timeframe: Optional[str] = None,
@@ -281,7 +315,8 @@ def get_signal_history(
 
 # ── /api/chart/{pair}/{timeframe} ─────────────────────────────────────────────
 
-@app.get("/api/chart/{pair}/{timeframe}")
+@app.get("/api/chart/{pair}/{timeframe}", tags=["Charts"], summary="Datos para gráfico de velas",
+         description="Devuelve velas OHLCV y señales superpuestas para un par/timeframe específico. Incluye marcadores de TP/SL.")
 def get_chart_data(
     pair:      str,
     timeframe: str,
@@ -341,7 +376,8 @@ def get_chart_data(
 
 # ── /api/metrics ──────────────────────────────────────────────────────────────
 
-@app.get("/api/metrics")
+@app.get("/api/metrics", tags=["Performance"], summary="Métricas y distribución de señales",
+         description="Distribución de señales por par, timeframe, dirección y sesión. Incluye confianza media y ADX medio.")
 def get_metrics(
     pair:      Optional[str] = None,
     timeframe: Optional[str] = None,
@@ -396,7 +432,8 @@ def get_metrics(
 
 # ── /api/performance ──────────────────────────────────────────────────────────
 
-@app.get("/api/performance")
+@app.get("/api/performance", tags=["Performance"], summary="Rendimiento de trades cerrados",
+         description="Métricas reales de PnL, win rate, profit factor y equity curve basadas en posiciones cerradas.")
 def get_performance(
     pair:      Optional[str] = None,
     timeframe: Optional[str] = None,
@@ -483,7 +520,8 @@ def get_performance(
 
 # ── /api/positions ────────────────────────────────────────────────────────────
 
-@app.get("/api/positions")
+@app.get("/api/positions", tags=["Performance"], summary="Posiciones abiertas",
+         description="Lista de posiciones actualmente abiertas con PnL no realizado, par, dirección y duración.")
 def get_open_positions():
     """Posiciones abiertas actualmente."""
     try:
@@ -535,7 +573,8 @@ def get_open_positions():
 
 # ── /api/monitor ──────────────────────────────────────────────────────────────
 
-@app.get("/api/monitor")
+@app.get("/api/monitor", tags=["Monitoring"], summary="Monitor de frescura de datos",
+         description="Verifica la antigüedad de datos OHLCV, features calculados, señales generadas y modelos por par/timeframe.")
 def get_monitor():
     """Estado de frescura de datos para monitoreo sin SSH."""
     try:
@@ -618,7 +657,8 @@ def get_monitor():
 
 # ── /api/health — Salud de modelos ────────────────────────────────────────────
 
-@app.get("/api/health")
+@app.get("/api/health", tags=["Monitoring"], summary="Salud de modelos ML",
+         description="Lee el último informe JSON de model_health_check: estado de cada modelo XGBoost/LSTM, F1 scores y antigüedad.")
 def get_model_health():
     """Lee el último informe de salud de modelos generado por model_health.py."""
     try:
@@ -651,7 +691,8 @@ def get_model_health():
 
 # ── /api/anomalies — Alertas de anomalías ─────────────────────────────────────
 
-@app.get("/api/anomalies")
+@app.get("/api/anomalies", tags=["Monitoring"], summary="Alertas de anomalías",
+         description="Lee el último informe del anomaly_detector: alertas de sequía de señales, drawdown, datos obsoletos, etc.")
 def get_anomalies():
     """Lee el último informe de anomalías generado por anomaly_detector.py."""
     try:
@@ -668,7 +709,8 @@ def get_anomalies():
 
 # ── /api/summary — Resumen mensual IA ─────────────────────────────────────────
 
-@app.get("/api/summary")
+@app.get("/api/summary", tags=["Monitoring"], summary="Resumen mensual IA",
+         description="Lee el último resumen mensual generado por el análisis IA (Claude/ChatGPT) con recomendaciones estratégicas.")
 def get_monthly_summary():
     """Lee el último resumen mensual generado por monthly_summary.py."""
     try:
@@ -700,8 +742,9 @@ def get_monthly_summary():
 
 # ── /api/pipeline — Estado del pipeline (barras de progreso) ──────────────────
 
-@app.get("/api/pipeline")
-def get_pipeline(hours: int = Query(24, le=168)):
+@app.get("/api/pipeline", tags=["Status"], summary="Logs del pipeline",
+         description="Últimos eventos del pipeline de datos: recolección, features, labels, señales. Filtrable por horas.")
+def get_pipeline(hours: int = Query(24, le=168, description="Horas hacia atrás a consultar")):
     """Devuelve historial de ejecuciones del pipeline para visualización."""
     try:
         if not _table_exists("pipeline_runs"):
@@ -764,12 +807,14 @@ def get_pipeline(hours: int = Query(24, le=168)):
 
 # ── /api/bot — Configuración del bot ──────────────────────────────────────────
 
-@app.get("/api/bot")
+@app.get("/api/bot", tags=["Config"], summary="Configuración del bot",
+         description="Devuelve la configuración actual del bot de trading: pares activos, timeframes y estado de auto-trading.")
 def get_bot_config():
     return _load_bot_config().dict()
 
 
-@app.post("/api/bot")
+@app.post("/api/bot", tags=["Config"], summary="Actualizar configuración del bot",
+          description="Modifica los pares activos, timeframes y estado de auto-trading del bot.")
 def update_bot_config(cfg: BotConfig):
     _save_bot_config(cfg)
     return {"ok": True, "config": cfg.dict()}
@@ -777,7 +822,8 @@ def update_bot_config(cfg: BotConfig):
 
 # ── /api/services — Estado de servicios systemd ──────────────────────────────
 
-@app.get("/api/services")
+@app.get("/api/services", tags=["Status"], summary="Estado de servicios systemd",
+         description="Consulta el estado de todos los servicios y timers systemd de ML-Ayram: activo, último run, próximo run.")
 def get_services_status():
     """Consulta el estado de los servicios y timers systemd de ML-Ayram."""
     services = [
@@ -863,7 +909,8 @@ def get_services_status():
 
 # ── /api/correlations ─────────────────────────────────────────────────────────
 
-@app.get("/api/correlations")
+@app.get("/api/correlations", tags=["Performance"], summary="Correlaciones entre pares",
+         description="Matriz de correlación de log-returns entre los pares monitoreados para un timeframe y período dados.")
 def get_correlations(
     timeframe: str = Query("H1"),
     days: int = Query(90, le=365),
@@ -943,8 +990,9 @@ def get_correlations(
 MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models" / "saved"
 
 
-@app.get("/api/train/status")
-def get_train_status(lines: int = Query(150, le=500)):
+@app.get("/api/train/status", tags=["Training"], summary="Estado del entrenamiento en curso",
+         description="Parsea los logs de systemd del servicio de training para extraer progreso, modelo actual, épocas, F1 scores y archivos generados.")
+def get_train_status(lines: int = Query(150, le=500, description="Líneas de log a analizar")):
     """
     Estado en tiempo real del entrenamiento:
     - Estado del servicio systemd
@@ -1133,7 +1181,8 @@ class BacktestRequest(BaseModel):
     min_confidence: float = 0.54
 
 
-@app.post("/api/backtest/run")
+@app.post("/api/backtest/run", tags=["Performance"], summary="Ejecutar backtest",
+          description="Ejecuta un backtest completo sobre señales históricas con simulación realista (spread, slippage, position sizing).")
 def api_backtest_run(req: BacktestRequest):
     """
     Ejecuta backtest sobre señales históricas y devuelve el informe completo.
@@ -1159,7 +1208,8 @@ def api_backtest_run(req: BacktestRequest):
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/backtest/quick-stats")
+@app.get("/api/backtest/quick-stats", tags=["Performance"], summary="Stats rápidos de último backtest",
+         description="Devuelve métricas resumidas del último backtest ejecutado (total trades, win rate, PnL, drawdown).")
 def api_backtest_quick_stats():
     """
     Estadísticas rápidas: cuántas señales hay disponibles para backtest por par/TF.
@@ -1194,7 +1244,8 @@ def api_backtest_quick_stats():
 DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"
 
 
-@app.get("/api/docs")
+@app.get("/api/docs-list", tags=["Docs"], summary="Listar documentación",
+         description="Escanea los archivos .md del directorio docs/ y devuelve sus nombres y tamaños.")
 def list_docs():
     """Lista todos los .md de la carpeta docs/"""
     if not DOCS_DIR.exists():
@@ -1213,7 +1264,8 @@ def list_docs():
     return {"files": files}
 
 
-@app.get("/api/docs/{filename}")
+@app.get("/api/docs-content/{filename}", tags=["Docs"], summary="Leer documento",
+         description="Devuelve el contenido raw de un archivo .md del directorio docs/.")
 def get_doc(filename: str):
     """Devuelve el contenido markdown de un archivo"""
     # Seguridad: solo .md, sin path traversal
@@ -1459,12 +1511,14 @@ def test_alert_rule(rule_id: str):
 
 # ── /api/config ───────────────────────────────────────────────────────────────
 
-@app.get("/api/config")
+@app.get("/api/config", tags=["Config"], summary="Filtros del generador de señales",
+         description="Devuelve los filtros actuales: min_confidence, min_adx, min_rr, cooldown_bars, allow_offmarket.")
 def get_config():
     return _current_config.dict()
 
 
-@app.post("/api/config")
+@app.post("/api/config", tags=["Config"], summary="Actualizar filtros del generador",
+          description="Modifica los filtros de calidad del generador de señales en caliente.")
 def update_config(cfg: FilterConfig):
     global _current_config
     _current_config = cfg

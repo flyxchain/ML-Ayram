@@ -37,6 +37,12 @@ requests>=2.31.0        # collector.py (EODHD API) y telegram.py
 python-dotenv>=1.0.0
 loguru>=0.7.0
 
+# ── Testing ──────────────────────────────────────────────────────────────────
+pytest>=8.0.0
+pytest-cov>=4.1.0       # cobertura de tests
+httpx>=0.26.0           # requerido por FastAPI TestClient
+pytest-mock>=3.12.0     # fixtures de mocking
+
 # ── Desarrollo y análisis (solo local, no se instalan en servidor) ────────────
 jupyter>=1.0.0
 matplotlib>=3.8.0

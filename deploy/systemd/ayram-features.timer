@@ -3,8 +3,9 @@ Description=ML-Ayram Features + Labels — ejecutar cada hora
 Requires=ayram-features.service
 
 [Timer]
-# Ejecutar al inicio de cada hora (minuto 5 para que el collector ya haya corrido)
-OnCalendar=*:05
+# Ejecutar cada 3 horas (minuto 10 para que el collector ya haya corrido)
+# El job tarda ~2h con M15, así no se solapan ejecuciones
+OnCalendar=*-*-* 00/3:10:00
 AccuracySec=60s
 Persistent=true
 

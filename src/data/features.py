@@ -326,9 +326,17 @@ def process_pair_timeframe(pair: str, timeframe: str, engine) -> int:
         ON CONFLICT (pair, timeframe, timestamp) DO UPDATE SET {conflict_cols}
     """)
 
-    with engine.connect() as conn:
-        conn.execute(sql, rows)
-        conn.commit()
+    # Insertar en batches para evitar SSL timeout en Supabase
+    BATCH_SIZE = 5000
+    inserted = 0
+    for i in range(0, len(rows), BATCH_SIZE):
+        batch = rows[i:i + BATCH_SIZE]
+        with engine.connect() as conn:
+            conn.execute(sql, batch)
+            conn.commit()
+        inserted += len(batch)
+        if len(rows) > BATCH_SIZE:
+            logger.debug(f"    Batch {i // BATCH_SIZE + 1}: {inserted}/{len(rows)} filas")
 
     logger.success(f"  ✅ {pair} {timeframe}: {len(df_save)} filas guardadas")
     return len(df_save)

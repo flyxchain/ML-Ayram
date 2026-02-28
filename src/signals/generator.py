@@ -469,4 +469,4 @@ def run_loop(
 if __name__ == "__main__":
     # Por defecto arranca el bucle cada 60 segundos
     # Para un test puntual: run_once()
-    run_loop(interval_seconds=60)
+    run_loop(interval_seconds=900)

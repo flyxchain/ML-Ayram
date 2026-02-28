@@ -19,6 +19,8 @@ Arranque:
   uvicorn src.dashboard.app:app --host 0.0.0.0 --port 8000 --workers 1
 """
 
+import json
+import math
 import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -28,11 +30,31 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from loguru import logger
+
+
+class NaNSafeEncoder(json.JSONEncoder):
+    """JSON encoder que convierte NaN/Inf a null en vez de fallar."""
+    def default(self, obj):
+        if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+            return None
+        return super().default(obj)
+
+    def iterencode(self, o, _one_shot=False):
+        return super().iterencode(self._sanitize(o), _one_shot)
+
+    def _sanitize(self, obj):
+        if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+            return None
+        if isinstance(obj, dict):
+            return {k: self._sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._sanitize(v) for v in obj]
+        return obj
 
 load_dotenv()
 
@@ -66,6 +88,12 @@ def _query(sql: str, params: dict = None) -> pd.DataFrame:
         return pd.read_sql(text(sql), conn, params=params or {})
 
 
+def _safe_json(data):
+    """Devuelve JSONResponse limpiando NaN/Inf → null."""
+    clean = json.loads(json.dumps(data, cls=NaNSafeEncoder))
+    return JSONResponse(content=clean)
+
+
 def _table_exists(table: str) -> bool:
     result = _query(
         "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = :t)",
@@ -89,9 +117,14 @@ def get_status():
 
         open_positions = 0
         if _table_exists("positions_active"):
-            open_positions = int(
-                _query("SELECT COUNT(*) AS n FROM positions_active WHERE status = 'open'").iloc[0]["n"]
-            )
+            try:
+                open_positions = int(
+                    _query("SELECT COUNT(*) AS n FROM positions_active WHERE status = 'open'").iloc[0]["n"]
+                )
+            except Exception:
+                open_positions = int(
+                    _query("SELECT COUNT(*) AS n FROM positions_active").iloc[0]["n"]
+                )
 
         return {
             "status":          "online",
@@ -116,7 +149,7 @@ def get_latest_signals(limit: int = Query(20, le=100)):
             {"limit": limit},
         )
         df["timestamp"] = df["timestamp"].astype(str)
-        return df.to_dict(orient="records")
+        return _safe_json(df.to_dict(orient="records"))
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -154,12 +187,12 @@ def get_signal_history(
         )
         df["timestamp"] = df["timestamp"].astype(str)
 
-        return {
+        return _safe_json({
             "total":   total,
             "page":    page,
             "pages":   max(1, -(-total // page_size)),
             "signals": df.to_dict(orient="records"),
-        }
+        })
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -206,12 +239,12 @@ def get_chart_data(
                 pd.to_datetime(signals["timestamp"]).astype("int64") // 10**9
             )
 
-        return {
+        return _safe_json({
             "pair":      pair,
             "timeframe": timeframe,
             "candles":   df[["timestamp","open","high","low","close","volume"]].to_dict(orient="records"),
             "signals":   signals.to_dict(orient="records") if not signals.empty else [],
-        }
+        })
     except HTTPException:
         raise
     except Exception as e:
@@ -256,7 +289,7 @@ def get_metrics(
         df["date"] = pd.to_datetime(df["timestamp"]).dt.date.astype(str)
         by_day = df.groupby("date").size().reset_index(name="count").tail(30).to_dict(orient="records")
 
-        return {
+        return _safe_json({
             "period_days":    days,
             "total_signals":  total,
             "long_signals":   longs,
@@ -269,7 +302,7 @@ def get_metrics(
             "by_pair":        df.groupby("pair").size().to_dict(),
             "by_timeframe":   df.groupby("timeframe").size().to_dict(),
             "signals_by_day": by_day,
-        }
+        })
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -342,7 +375,7 @@ def get_performance(
         recent["opened_at"] = recent["opened_at"].astype(str)
         recent["closed_at"] = recent["closed_at"].astype(str)
 
-        return {
+        return _safe_json({
             "period_days":    days,
             "trades":         total,
             "wins":           len(wins),
@@ -361,7 +394,7 @@ def get_performance(
             "recent_trades":  recent[["pair","timeframe","direction","entry_price",
                                       "exit_price","pnl","result","opened_at","closed_at",
                                       "duration_bars"]].to_dict(orient="records"),
-        }
+        })
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -375,7 +408,17 @@ def get_open_positions():
         if not _table_exists("positions_active"):
             return []
 
-        df = _query("SELECT * FROM positions_active WHERE status = 'open' ORDER BY opened_at DESC")
+        # Detectar si la tabla tiene columna 'status'
+        cols = _query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'positions_active'"
+        )["column_name"].tolist()
+
+        if "status" in cols:
+            df = _query("SELECT * FROM positions_active WHERE status = 'open' ORDER BY opened_at DESC")
+        else:
+            df = _query("SELECT * FROM positions_active ORDER BY opened_at DESC")
+
         if df.empty:
             return []
 
@@ -405,7 +448,7 @@ def get_open_positions():
                 row["floating_pnl"]  = None
                 row["current_price"] = None
 
-        return rows
+        return _safe_json(rows)
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -481,7 +524,7 @@ def get_monitor():
         last_candle_global  = ohlcv["last_candle"].max()  if not ohlcv.empty else None
         last_feature_global = features["last_feature"].max() if not features.empty else None
 
-        return {
+        return _safe_json({
             "server_time":     now.isoformat(),
             "summary": {
                 "collector_health":  f"{ohlcv_ok}/{ohlcv_total} OK",
@@ -493,7 +536,7 @@ def get_monitor():
             },
             "ohlcv":    ohlcv_rows,
             "features": features_rows,
-        }
+        })
     except Exception as e:
         logger.error(f"/api/monitor error: {e}")
         raise HTTPException(500, str(e))

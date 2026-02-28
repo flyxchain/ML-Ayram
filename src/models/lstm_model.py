@@ -148,8 +148,8 @@ def load_dataset(pair: str, timeframe: str):
 
     # Rellenar NaN con mediana de cada columna
     medians = sub.median()
-    sub = sub.fillna(medians)
-    sub = sub.infer_objects(copy=False)
+    with pd.option_context('future.no_silent_downcasting', True):
+        sub = sub.fillna(medians).infer_objects(copy=False)
 
     # Eliminar columnas que siguen con NaN (todas eran NaN) o varianza cero
     all_nan_cols = sub.columns[sub.isna().all()].tolist()

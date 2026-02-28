@@ -641,7 +641,7 @@ async function loadChart() {
       borderUpColor: '#3fb950', borderDownColor: '#f85149',
       wickUpColor: '#3fb950', wickDownColor: '#f85149',
     });
-    cs.setData(d.candles.map(c => ({ time: c.timestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
+    cs.setData(d.candles.filter(c => c.open != null && c.high != null && c.low != null && c.close != null).map(c => ({ time: c.timestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
 
     if (showSig && d.signals.length) {
       cs.setMarkers(d.signals.map(s => ({

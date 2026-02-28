@@ -212,6 +212,11 @@ def get_chart_data(
         if df.empty:
             raise HTTPException(404, f"Sin datos para {pair} {timeframe}")
 
+        # Eliminar velas con NaN en OHLCV (lightweight-charts no acepta null)
+        df = df.dropna(subset=["open", "high", "low", "close"])
+        if df.empty:
+            raise HTTPException(404, f"Sin datos válidos para {pair} {timeframe}")
+
         # Guardar rango de timestamps ANTES de convertir a epoch
         min_ts_str = str(df["timestamp"].min())
         df["timestamp"] = (

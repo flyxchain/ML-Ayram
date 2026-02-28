@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS positions_active (
 CREATE_TRADES_TABLE = """
 CREATE TABLE IF NOT EXISTS trades_history (
     id          SERIAL PRIMARY KEY,
-    signal_id   INT NOT NULL,
+    signal_id   INT NOT NULL UNIQUE,
     pair        TEXT NOT NULL,
     timeframe   TEXT NOT NULL,
     direction   SMALLINT NOT NULL,
@@ -303,7 +303,7 @@ def update_positions(engine) -> list[dict]:
                     (:signal_id, :pair, :timeframe, :direction, :entry_price, :exit_price,
                      :tp_price, :sl_price, :lot_size, :risk_amount, :pnl, :result,
                      :opened_at, :closed_at, :duration_bars)
-                ON CONFLICT DO NOTHING
+                ON CONFLICT (signal_id) DO NOTHING
             """), {
                 "signal_id":    signal_id,
                 "pair":         pair,

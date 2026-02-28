@@ -49,8 +49,10 @@ Thumbs.db
 mlruns/
 mlartifacts/
 
-# Resultados de backtesting (se regeneran)
+# Resultados de backtesting y logs (se regeneran)
 results/
+logs/
+*.log
 
 # Backups
 backups/

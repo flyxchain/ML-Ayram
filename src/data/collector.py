@@ -9,7 +9,7 @@ import os
 import time
 import requests
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from loguru import logger
@@ -151,7 +151,7 @@ def download_historical(years: int = 3):
     Llama a esta función una sola vez para poblar la BD.
     """
     engine = create_engine(DATABASE_URL)
-    to_dt   = datetime.utcnow()
+    to_dt   = _utcnow()
     from_dt = to_dt - timedelta(days=365 * years)
 
     logger.info(f"Descargando histórico {years} años: {from_dt.date()} → {to_dt.date()}")
@@ -225,18 +225,31 @@ def get_latest_candles(pair: str, timeframe: str, n: int = 500) -> pd.DataFrame:
     return df.sort_values("timestamp").reset_index(drop=True)
 
 
+def _utcnow() -> datetime:
+    """Devuelve el momento actual en UTC con timezone info."""
+    return datetime.now(timezone.utc)
+
+
+def _ensure_aware(dt) -> datetime:
+    """Convierte un datetime naive a UTC-aware si es necesario."""
+    ts = pd.Timestamp(dt)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    return ts.to_pydatetime()
+
+
 def download_incremental():
     """
     Descarga solo las velas nuevas desde el último timestamp guardado en la BD.
     Llamado por el timer systemd cada 15 minutos.
     """
     engine = create_engine(DATABASE_URL)
-    to_dt  = datetime.utcnow()
+    to_dt  = _utcnow()
     total  = 0
 
     for pair in PAIR_MAP:
+        # ── M15 y H1 ─────────────────────────────────────────────
         for tf, interval in [("M15", "15m"), ("H1", "1h")]:
-            # Buscar el último timestamp guardado para este par/tf
             with engine.connect() as conn:
                 row = conn.execute(
                     text("SELECT MAX(timestamp) FROM ohlcv_raw WHERE pair = :pair AND timeframe = :tf"),
@@ -245,13 +258,12 @@ def download_incremental():
 
             last_ts = row[0] if row and row[0] else None
             if last_ts is None:
-                # Sin datos → descarga histórica completa
                 logger.info(f"{pair} {tf}: sin datos previos, descargando histórico...")
                 from_dt = to_dt - timedelta(days=365 * 3)
             else:
-                from_dt = pd.Timestamp(last_ts).to_pydatetime()
+                from_dt = _ensure_aware(last_ts)
                 if (to_dt - from_dt).total_seconds() < 60:
-                    continue   # ya tenemos datos frescos
+                    continue
 
             try:
                 df = fetch_intraday(pair, interval, from_dt, to_dt)
@@ -264,19 +276,17 @@ def download_incremental():
                 logger.error(f"  Error {pair} {tf}: {e}")
             time.sleep(0.3)
 
-        # Reconstruir H4 solo con los últimos 2 días de H1 (ventana de resampleo)
-        # Leer el último H4 guardado para saber desde dónde reconstruir
+        # ── H4 (reconstruido desde H1) ───────────────────────────
         try:
             with engine.connect() as conn:
                 last_h4 = conn.execute(
                     text("SELECT MAX(timestamp) FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'H4'"),
                     {"pair": pair},
                 ).fetchone()[0]
-            # Margen de 2 periodos H4 (8h) hacia atrás para no perder la vela en construcción
             h1_from = (
-                pd.Timestamp(last_h4).tz_localize("UTC") - pd.Timedelta(hours=8)
+                _ensure_aware(last_h4) - timedelta(hours=8)
                 if last_h4
-                else pd.Timestamp("2000-01-01", tz="UTC")
+                else datetime(2000, 1, 1, tzinfo=timezone.utc)
             )
             df_h1_recent = pd.read_sql(
                 text("SELECT * FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'H1' AND timestamp >= :from_ts ORDER BY timestamp"),
@@ -289,6 +299,31 @@ def download_incremental():
                 total += saved
         except Exception as e:
             logger.error(f"  Error H4 {pair}: {e}")
+
+        # ── D1 (diario) ──────────────────────────────────────────
+        try:
+            with engine.connect() as conn:
+                row = conn.execute(
+                    text("SELECT MAX(timestamp) FROM ohlcv_raw WHERE pair = :pair AND timeframe = 'D1'"),
+                    {"pair": pair},
+                ).fetchone()
+            last_d1 = row[0] if row and row[0] else None
+            if last_d1 is None:
+                d1_from = to_dt - timedelta(days=365 * 3)
+            else:
+                d1_from = _ensure_aware(last_d1)
+                if (to_dt - d1_from).total_seconds() < 3600:
+                    continue  # D1 no necesita actualizarse tan a menudo
+
+            df_d1 = fetch_daily(pair, d1_from, to_dt)
+            saved = save_to_db(df_d1, engine)
+            total += saved
+            if saved:
+                logger.info(f"  {pair} D1: +{saved} velas nuevas")
+        except Exception as e:
+            logger.error(f"  Error D1 {pair}: {e}")
+
+        time.sleep(0.3)
 
     if total:
         logger.success(f"✅ Incremental: {total} velas nuevas")

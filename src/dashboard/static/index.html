@@ -2483,7 +2483,7 @@ async function loadDocs() {
   try {
     // Cargar lista (cachear)
     if (!_docsListCache) {
-      const resp = await fetch('/api/docs');
+      const resp = await fetch('/api/docs-list');
       if (!resp.ok) {
         document.getElementById('docs-sidebar').innerHTML =
           `<div style="color:var(--red);padding:12px">⚠️ Endpoint /api/docs no disponible (HTTP ${resp.status}). Despliega la última versión.</div>`;
@@ -2531,7 +2531,7 @@ async function loadDocContent(filename) {
   });
 
   try {
-    const resp = await fetch(`/api/docs/${encodeURIComponent(filename)}`);
+    const resp = await fetch(`/api/docs-content/${encodeURIComponent(filename)}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
 

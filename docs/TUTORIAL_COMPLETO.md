@@ -4,7 +4,7 @@
 > **Proyecto:** ML-Ayram
 > **Objetivo:** Sistema de trading con ML que analiza pares de divisas, genera señales por Telegram y ejecuta trades automáticamente (modo simulado hasta tener cuenta demo)
 > **Última actualización:** Feb 2026
-> **Estado actual:** FASE 4 — Dataset (descarga en progreso) | Infraestructura completa
+> **Estado actual:** FASE 4 — Dataset (descarga en progreso) | Infraestructura completa | Dashboard 15 secciones
 
 ---
 
@@ -25,8 +25,10 @@
 13. [Fase 10 — Dashboard FastAPI](#13-fase-10)
 14. [Fase 11 — Monitoreo y Alertas](#14-fase-11)
 15. [Fase 12 — Análisis IA Mensual](#15-fase-12)
-16. [Deploy y Servicios systemd](#16-deploy)
-17. [Mantenimiento](#17-mantenimiento)
+16. [Fase 13 — Comparador de Modelos](#16-fase-13)
+17. [Deploy y Servicios systemd](#17-deploy)
+18. [Mantenimiento](#18-mantenimiento)
+19. [Roadmap de Mejoras](#19-roadmap)
 
 ---
 
@@ -67,8 +69,9 @@ EODHD API ──► collector.py ──► ohlcv_raw (PostgreSQL/Supabase)
            │                    │   (degradación modelos)
     dashboard/app.py            ├── anomaly_detector.py
     (FastAPI :8000)             │   (6 checks operativos)
-    7 secciones SPA             └── analysis/monthly_summary.py
-                                    (resumen IA mensual)
+    15 secciones SPA            └── analysis/monthly_summary.py
+    30+ endpoints API               (resumen IA mensual)
+    responsive (móvil+desktop)
 ```
 
 **Stack tecnológico:**
@@ -81,7 +84,7 @@ EODHD API ──► collector.py ──► ohlcv_raw (PostgreSQL/Supabase)
 - Tracking: MLflow (solo servidor)
 - Notificaciones: requests (API HTTP de Telegram)
 - Ejecución: Simulada (paper trading); cTrader cuando haya demo
-- Dashboard: FastAPI + Uvicorn (puerto 8000)
+- Dashboard: FastAPI + Uvicorn (puerto 8000), 15 secciones SPA, responsive
 - Monitoreo: model_health + anomaly_detector (automáticos con systemd)
 - Análisis: monthly_summary (genera prompts para Claude/ChatGPT)
 - Backtesting: Motor propio con Walk-Forward Validation
@@ -245,14 +248,18 @@ python -m src.train --lstm-only                    # solo LSTM
 ### 7.2 XGBoost
 - Validación TimeSeriesSplit (5 folds), objetivo CV F1 > 0.55
 - Tracking MLflow, optimización Optuna
+- Output: `models/saved/xgb_{par}_{tf}_{timestamp}.ubj` + `_meta.json`
+- Meta JSON contiene: `cv_f1_mean`, `cv_f1_std`, `cv_f1_folds`, `features`, `label_map`
 
 ### 7.3 LSTM con Attention
 - Secuencia de 60 velas, 2 capas × 128 unidades
 - Early stopping (paciencia 10), gradient clipping
 - Objetivo val F1 > 0.53
+- Output: `models/saved/lstm_{par}_{tf}_{timestamp}.pt`
+- Checkpoint contiene: `model_state`, `model_config` (hidden_size, num_layers), `scaler_*`, `feature_cols`, `metrics` (best_val_f1), `pair`, `timeframe`
 
 ### 7.4 Ensemble
-- XGBoost 55% + LSTM 45%
+- XGBoost 55% + LSTM 45% (hardcoded en `ensemble.py`)
 - Solo emite señal si ambos coinciden + confianza ≥ 72%
 
 ### 7.5 Reentrenamiento automático
@@ -355,35 +362,62 @@ Solo cuando haya cuenta demo de cTrader. Credenciales guardadas en .env.
 
 ## 13. Fase 10 — Dashboard FastAPI ✅
 
-### Backend: src/dashboard/app.py
+### Backend: src/dashboard/app.py (~1630 líneas, 30+ endpoints)
 
-**Endpoints:**
+**Endpoints completos:**
 
-| Endpoint | Descripción |
-|---|---|
-| `GET /` | SPA (index.html) |
-| `GET /api/status` | Estado del sistema (señales, velas, posiciones) |
-| `GET /api/signals/latest` | Últimas N señales |
-| `GET /api/signals/history` | Historial paginado con filtros par/TF/dirección |
-| `GET /api/chart/{pair}/{tf}` | Velas OHLCV + señales superpuestas (lightweight-charts) |
-| `GET /api/metrics` | Distribución señales, confianza media, acuerdo modelos |
-| `GET /api/performance` | PnL, win rate, PF, drawdown, equity curve |
-| `GET /api/positions` | Posiciones abiertas con PnL flotante en tiempo real |
-| `GET /api/monitor` | Frescura datos OHLCV y features por par/TF |
-| `GET /api/config` | Configuración filtros actual |
-| `POST /api/config` | Actualizar filtros del generador en caliente |
+| Endpoint | Método | Descripción |
+|---|---|---|
+| `/` | GET | SPA (index.html) |
+| `/api/status` | GET | Estado general: señales 24h/7d, último modelo, última señal |
+| `/api/signals/latest` | GET | Señales más recientes (últimas 20) |
+| `/api/signals/history` | GET | Historial paginado con filtros (par, TF, dirección, fecha) |
+| `/api/chart/{pair}/{tf}` | GET | Velas OHLCV + señales superpuestas para lightweight-charts |
+| `/api/metrics` | GET | Distribución de señales, confianza media, tasas long/short |
+| `/api/performance` | GET | Rendimiento trades cerrados: PnL, win rate, profit factor |
+| `/api/positions` | GET | Posiciones abiertas con PnL flotante |
+| `/api/monitor` | GET | Frescura de datos OHLCV, features, señales por par/TF |
+| `/api/health` | GET | Salud de modelos: F1 scores, antigüedad, estado |
+| `/api/anomalies` | GET | Alertas de anomalías (6 checks) |
+| `/api/summary` | GET | Resumen mensual IA + prompt generado |
+| `/api/pipeline` | GET | Logs del pipeline de ejecución |
+| `/api/services` | GET | Estado de servicios systemd + timers |
+| `/api/correlations` | GET | Correlaciones entre pares de divisas |
+| `/api/bot` | GET/POST | Configuración del bot (mode, risk, pairs) |
+| `/api/train/status` | GET | Estado del entrenamiento en curso |
+| `/api/backtest/run` | POST | Ejecutar backtest con parámetros custom |
+| `/api/backtest/quick-stats` | GET | Stats rápidos del último backtest |
+| `/api/models/compare` | GET | Comparador XGBoost vs LSTM side-by-side |
+| `/api/docs-list` | GET | Lista documentación (.md en docs/) |
+| `/api/docs-content/{file}` | GET | Contenido raw de un archivo .md |
+| `/api/notifications` | GET | Historial de notificaciones Telegram |
+| `/api/alert-rules` | GET/POST/PUT/DELETE | CRUD de reglas de alerta personalizadas |
+| `/api/alert-rules/test/{id}` | POST | Test de una regla de alerta |
+| `/api/config` | GET/POST | Filtros del generador de señales en caliente |
 
-### Frontend: src/dashboard/static/index.html
+### Frontend: src/dashboard/static/index.html (~3000 líneas, 15 secciones)
 
-SPA con 7 secciones:
+SPA responsive con 15 secciones:
 
-1. **Dashboard** — KPIs (señales hoy, última señal, posiciones abiertas, velas en BD), tabla posiciones abiertas con PnL flotante, tabla señales recientes
-2. **Gráfico** — Velas OHLCV interactivas (lightweight-charts) con señales LONG/SHORT superpuestas, líneas TP/SL, selección par/TF/velas
-3. **Historial** — Tabla paginada de señales con filtros (par, TF, dirección, días), confianza visual con barras
-4. **Métricas** — KPIs de señales, gráficos Chart.js (distribución long/short, por par, por día, por TF)
-5. **Rendimiento** — PnL, win rate, profit factor, max drawdown, equity curve, breakdown por par, últimos 10 trades
-6. **Monitor** — Estado frescura datos OHLCV y features por par/TF, alertas automáticas (ok/stale/critical), auto-refresh 30s
-7. **Configuración** — Editor de filtros en caliente (confianza, ADX, R:R, cooldown, TP/SL multipliers, off-market)
+| # | Página | Descripción |
+|---|---|---|
+| 1 | **Dashboard** | 4 KPIs, posiciones abiertas con PnL flotante, señales recientes |
+| 2 | **Pipeline** | Estado y logs de cada etapa: collector, features, labels, train |
+| 3 | **Gráfico** | Velas OHLCV interactivas (lightweight-charts), señales overlay, TP/SL |
+| 4 | **Historial** | Tabla paginada de señales con filtros par/TF/dirección/fecha |
+| 5 | **Métricas** | Charts Chart.js: distribución long/short, por par, por día, por TF |
+| 6 | **Rendimiento** | PnL, win rate, PF, drawdown, equity curve, desglose por par |
+| 7 | **Monitor** | Frescura datos OHLCV/features por par/TF, auto-refresh 30s |
+| 8 | **Mercado** | Sesiones activas, correlaciones entre pares |
+| 9 | **Train** | Progreso entrenamiento en vivo, modelos completados, F1s, log |
+| 10 | **Bot** | Config bot: mode, risk, pares activos |
+| 11 | **Señales** | Editor filtros en caliente (confianza, ADX, R:R, cooldown) |
+| 12 | **🎯 Backtest** | Motor backtesting interactivo con KPIs |
+| 13 | **📚 Docs** | Visor documentación Markdown del proyecto |
+| 14 | **🔔 Alertas** | Historial notificaciones + CRUD reglas de alerta |
+| 15 | **🧠 Modelos** | Comparador XGB vs LSTM: F1 side-by-side, wins, barras progreso |
+
+**Responsive:** hamburger menu en móvil (<768px), grids adaptativos, touch targets 44px, safe-area-inset para notch, scroll-snap en tablas.
 
 ### Arranque
 
@@ -445,7 +479,17 @@ python -m src.monitoring.anomaly_detector --quiet --no-notify
 **Telegram:** solo alertas high/critical
 **Output:** `results/anomalies_YYYYMMDD_HHMM.json`
 
-### 14.3 Timer automático
+### 14.3 Sistema de alertas personalizadas (dashboard)
+
+La pestaña 🔔 Alertas del dashboard permite:
+- Ver historial de todas las notificaciones Telegram enviadas
+- Crear reglas de alerta personalizadas (nombre, condición, severidad, canal)
+- Editar y eliminar reglas existentes
+- Probar una regla de alerta antes de activarla
+
+**Endpoints:** `GET/POST/PUT/DELETE /api/alert-rules`, `POST /api/alert-rules/test/{id}`
+
+### 14.4 Timer automático
 
 ```
 ayram-anomaly.timer → cada 6h (00:30, 06:30, 12:30, 18:30)
@@ -497,7 +541,44 @@ walk_forward → model_health → monthly_summary
 
 ---
 
-## 16. Deploy y Servicios systemd
+## 16. Fase 13 — Comparador de Modelos ✅
+
+### Qué es
+
+Herramienta visual en el dashboard para comparar el rendimiento de XGBoost vs LSTM side-by-side por cada combinación par/timeframe. Sirve para evaluar si los pesos del ensemble (actualmente 55/45) son óptimos o deberían ajustarse.
+
+### Backend: `/api/models/compare`
+
+- Escanea el directorio `models/saved/` buscando archivos de ambos modelos
+- **XGBoost:** lee `xgb_{par}_{tf}_{timestamp}_meta.json` → extrae `cv_f1_mean`, `cv_f1_std`, `cv_f1_folds`, features, fecha
+- **LSTM:** carga `lstm_{par}_{tf}_{timestamp}.pt` con `torch.load()` → extrae `best_val_f1`, history, hidden_size, num_layers, features
+- Determina el ganador por F1 más alto
+- Devuelve resumen global: total pares, wins de cada modelo, ties, F1 medios
+
+### Frontend: pestaña 🧠 Modelos
+
+- **Filtros:** dropdown de par y timeframe, actualizan la vista dinámicamente
+- **6 tarjetas resumen:** total par/TF, wins XGB, wins LSTM, ties, avg F1 XGB, avg F1 LSTM
+- **Tarjetas de comparación:** por cada par/TF:
+  - Header con nombre del par y badge del timeframe
+  - Dos columnas: XGBoost 🌲 | LSTM 🧠
+  - F1 score con ⭐ para el ganador
+  - Barras de progreso del F1 (azul para XGB, morado para LSTM)
+  - Métricas específicas: std/folds (XGB), hidden_size/layers (LSTM)
+  - Número de features, tamaño de archivo, fecha de entrenamiento
+- Maneja el caso de modelos ausentes ("No entrenado")
+- Datos cacheados en `_modelsData` para filtros sin recarga
+
+### Cómo usarlo
+
+1. Entrenar modelos: `python -m src.train`
+2. Abrir dashboard → pestaña 🧠 Modelos
+3. Revisar qué modelo domina por par/TF
+4. Si hay diferencias claras, considerar pesos dinámicos del ensemble por par/TF
+
+---
+
+## 17. Deploy y Servicios systemd
 
 ### Script de deploy (deploy/deploy.sh)
 
@@ -600,7 +681,7 @@ systemctl restart ayram-dashboard ayram-signals
 
 ---
 
-## 17. Mantenimiento
+## 18. Mantenimiento
 
 ### Reentrenamiento
 
@@ -626,6 +707,10 @@ python -m src.analysis.monthly_summary --last-n-days 30 --prompt
 
 El archivo `results/ai_prompt_*.md` se copia y pega en Claude o ChatGPT para obtener análisis estratégico.
 
+### Comparar modelos
+
+Acceder al dashboard → pestaña 🧠 Modelos. Los datos se actualizan automáticamente cuando hay modelos nuevos en `models/saved/`.
+
 ### Backup de modelos
 
 ```bash
@@ -649,6 +734,40 @@ systemctl status ayram-dashboard ayram-signals
 systemctl list-timers ayram-*
 # Todos deben aparecer como active
 ```
+
+---
+
+## 19. Roadmap de Mejoras
+
+Priorizado por impacto en la rentabilidad del sistema. Referencia detallada en `PROMPT_CONTINUIDAD.md`.
+
+### 🔴 Alto impacto — Rentabilidad
+
+| # | Mejora | Descripción |
+|---|---|---|
+| 1 | **Pesos dinámicos del ensemble** | Ajustar 55/45 automáticamente por par/TF según F1 del backtest |
+| 2 | **Confluencia multi-timeframe** | Scoring: señal que coincide en M15+H1+H4 puntúa más alto |
+| 3 | **Circuit breaker por drawdown** | Pausar trading si DD acumulado supera umbral |
+| 4 | **Walk-forward en pipeline semanal** | Integrar WF en reentrenamiento para validación OOS real |
+
+### 🟡 Impacto medio — Operativa
+
+| # | Mejora | Descripción |
+|---|---|---|
+| 5 | Equity curve en dashboard | Gráfica de PnL acumulado en el tiempo |
+| 6 | Feature importance tracking | Guardar y visualizar importancias XGB por reentrenamiento |
+| 7 | Detección de régimen de mercado | Clasificador trending/ranging/volátil |
+| 8 | Análisis de slippage | Precio señal vs precio ejecución |
+| 9 | Autenticación del dashboard | Login JWT o HTTP Basic |
+
+### 🟢 Nice to have
+
+| # | Mejora | Descripción |
+|---|---|---|
+| 10 | Model registry con versionado | Cada señal registra versión del modelo, rollback automático |
+| 11 | Paper trading mode explícito | Flag sin ejecución real |
+| 12 | Correlación entre pares | Check pre-apertura para limitar exposición |
+| 13 | Test coverage | Cubrir ensemble, position_manager, anomaly_detector |
 
 ---
 

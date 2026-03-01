@@ -17,12 +17,10 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import f1_score
-from sqlalchemy import create_engine, text
-from dotenv import load_dotenv
+from sqlalchemy import text
 from loguru import logger
+from src.utils.db import engine
 
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
 MODELS_DIR   = Path("models/saved")
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -129,7 +127,6 @@ class ForexLSTM(nn.Module):
 
 def load_dataset(pair: str, timeframe: str):
     """Carga y preprocesa datos desde la BD."""
-    engine = create_engine(DATABASE_URL)
     df = pd.read_sql(
         text("""
             SELECT * FROM features_computed

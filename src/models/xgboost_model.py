@@ -18,14 +18,11 @@ except ImportError:
     MLFLOW_AVAILABLE = False
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import f1_score
-from sqlalchemy import create_engine, text
-from dotenv import load_dotenv
+from sqlalchemy import text
 from loguru import logger
 from pathlib import Path
 from datetime import datetime
-
-load_dotenv()
-DATABASE_URL    = os.getenv("DATABASE_URL")
+from src.utils.db import engine
 MLFLOW_URI      = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 MODELS_DIR      = Path("models/saved")
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -60,7 +57,6 @@ LABEL_MAP_INV = {0: -1, 1: 0, 2: 1}
 
 def load_dataset(pair: str, timeframe: str) -> tuple[pd.DataFrame, pd.Series]:
     """Carga features + labels desde la BD."""
-    engine = create_engine(DATABASE_URL)
     df = pd.read_sql(
         text("""
             SELECT * FROM features_computed

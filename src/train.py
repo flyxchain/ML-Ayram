@@ -20,11 +20,11 @@ from typing import Optional
 import pandas as pd
 from dotenv import load_dotenv
 from loguru import logger
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 import os
+from src.utils.db import engine
 
 load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ── Telegram helpers ──────────────────────────────────────────────────────────
 
@@ -253,7 +253,6 @@ def main() -> None:
     train_xgb_flag  = not args.lstm_only
     train_lstm_flag = not args.xgb_only
 
-    engine  = create_engine(DATABASE_URL)
     results = []
     total_start = time.time()
 

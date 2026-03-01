@@ -237,6 +237,13 @@ def train_lstm(
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def _model_exists(model_type: str, pair: str, tf: str) -> bool:
+    """Comprueba si ya existe un modelo guardado para este par/timeframe."""
+    from pathlib import Path
+    pattern = f"{model_type}_{pair}_{tf}_*.{'ubj' if model_type == 'xgb' else 'pt'}"
+    return any(Path("models/saved").glob(pattern))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Entrenamiento ML-Ayram")
     parser.add_argument("--pairs",       nargs="+", default=ALL_PAIRS,      metavar="PAIR")
@@ -248,6 +255,7 @@ def main() -> None:
     parser.add_argument("--epochs",     type=int, default=50,  help="Epochs LSTM (default: 50)")
     parser.add_argument("--patience",   type=int, default=10,  help="Early stopping patience (default: 10)")
     parser.add_argument("--min-rows",   type=int, default=MIN_ROWS, help=f"Mínimo filas etiquetadas (default: {MIN_ROWS})")
+    parser.add_argument("--resume",     action="store_true", help="Saltar modelos que ya tienen un archivo guardado hoy")
     args = parser.parse_args()
 
     train_xgb_flag  = not args.lstm_only
@@ -296,16 +304,26 @@ def main() -> None:
                 continue
 
             if train_xgb_flag:
-                r = train_xgb(pair, tf, rows, optimize=args.optimize, n_trials=args.trials)
-                results.append(r)
-                completed += 1
-                _tg_model_done(r, completed, n_combos)
+                if args.resume and _model_exists("xgb", pair, tf):
+                    logger.info(f"⏭  [XGB] {pair} {tf} — modelo existente, saltando (--resume)")
+                    results.append(TrainResult(pair, tf, "xgb", "skip", rows=rows, error_msg="resume: modelo ya existe"))
+                    completed += 1
+                else:
+                    r = train_xgb(pair, tf, rows, optimize=args.optimize, n_trials=args.trials)
+                    results.append(r)
+                    completed += 1
+                    _tg_model_done(r, completed, n_combos)
 
             if train_lstm_flag:
-                r = train_lstm(pair, tf, rows, epochs=args.epochs, patience=args.patience)
-                results.append(r)
-                completed += 1
-                _tg_model_done(r, completed, n_combos)
+                if args.resume and _model_exists("lstm", pair, tf):
+                    logger.info(f"⏭  [LSTM] {pair} {tf} — modelo existente, saltando (--resume)")
+                    results.append(TrainResult(pair, tf, "lstm", "skip", rows=rows, error_msg="resume: modelo ya existe"))
+                    completed += 1
+                else:
+                    r = train_lstm(pair, tf, rows, epochs=args.epochs, patience=args.patience)
+                    results.append(r)
+                    completed += 1
+                    _tg_model_done(r, completed, n_combos)
 
     _print_summary(results)
     total_elapsed = time.time() - total_start

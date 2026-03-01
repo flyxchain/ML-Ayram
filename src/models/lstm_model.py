@@ -50,7 +50,8 @@ FEATURE_COLS = [
     "close_vs_ema20", "close_vs_ema50", "close_vs_ema200",
     "hour_of_day", "day_of_week",
     "is_london", "is_newyork", "is_overlap",
-    "htf_trend", "htf_rsi", "htf_adx",
+    "htf_trend", "htf_rsi",
+    # htf_adx excluido: columna añadida tras el histórico, registros anteriores son NULL
 ]
 
 

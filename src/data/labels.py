@@ -258,4 +258,6 @@ def run_labeling(
 
 
 if __name__ == "__main__":
-    run_labeling()
+    from src.utils.pipeline_logger import pipeline_run
+    with pipeline_run("labels") as run:
+        run_labeling()

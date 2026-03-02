@@ -453,10 +453,14 @@ def run_loop(
     Uso:
         python -m src.signals.generator
     """
+    from src.utils.pipeline_logger import pipeline_run
     logger.info(f"Iniciando generador de señales — intervalo {interval_seconds}s")
     while True:
         try:
-            run_once(pairs, timeframes, filters)  # generate_signal ya loguea internamente
+            with pipeline_run("signals") as run:
+                signals = run_once(pairs, timeframes, filters)
+                run["rows_processed"] = len(signals)
+                run["details"] = {"valid_signals": len(signals)}
         except Exception as e:
             logger.error(f"Error en ciclo de señales: {e}")
 

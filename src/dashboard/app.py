@@ -992,16 +992,15 @@ MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models" / "saved"
 
 
 @app.get("/api/train/status", tags=["Training"], summary="Estado del entrenamiento en curso",
-         description="Parsea los logs de systemd del servicio de training para extraer progreso, modelo actual, épocas, F1 scores y archivos generados.")
+         description="Lee logs del watchdog/nohup y journalctl para extraer progreso, modelo actual, épocas, F1 scores y archivos generados.")
 def get_train_status(lines: int = Query(150, le=500, description="Líneas de log a analizar")):
     """
-    Estado en tiempo real del entrenamiento:
-    - Estado del servicio systemd
-    - Logs recientes parseados
-    - Progreso (modelos completados / total)
-    - Modelo actual y época
+    Estado en tiempo real del entrenamiento.
+    Lee logs del watchdog nohup y systemd journalctl.
     """
     try:
+        LOGS_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
+
         # 1. Estado systemd
         svc_status = "unknown"
         svc_since = None
@@ -1010,8 +1009,7 @@ def get_train_status(lines: int = Query(150, le=500, description="Líneas de log
                 ["systemctl", "is-active", "ayram-train.service"],
                 capture_output=True, text=True, timeout=5,
             )
-            svc_status = r.stdout.strip()  # active / inactive / failed
-
+            svc_status = r.stdout.strip()
             if svc_status == "active":
                 r2 = subprocess.run(
                     ["systemctl", "show", "ayram-train.service",
@@ -1026,17 +1024,64 @@ def get_train_status(lines: int = Query(150, le=500, description="Líneas de log
         except Exception:
             pass
 
-        # 2. Leer logs de journalctl
+        # 2. Leer logs: primero watchdog/train nohup, luego journalctl como fallback
         log_lines = []
-        try:
-            r = subprocess.run(
-                ["journalctl", "-u", "ayram-train.service",
-                 "--no-pager", "-n", str(lines), "--output=short-iso"],
-                capture_output=True, text=True, timeout=10,
-            )
-            log_lines = r.stdout.strip().split("\n") if r.stdout.strip() else []
-        except Exception:
-            pass
+        log_source = "none"
+
+        # Buscar log de watchdog más reciente
+        watchdog_logs = sorted(LOGS_DIR.glob("watchdog_*.log"), key=lambda f: f.stat().st_mtime, reverse=True) if LOGS_DIR.exists() else []
+        train_logs    = sorted(LOGS_DIR.glob("train_*.log"),    key=lambda f: f.stat().st_mtime, reverse=True) if LOGS_DIR.exists() else []
+
+        # Determinar si el watchdog está activo (modificado en últimos 30 min)
+        active_watchdog = None
+        for wlog in watchdog_logs:
+            age_min = (datetime.now(timezone.utc) - datetime.fromtimestamp(wlog.stat().st_mtime, tz=timezone.utc)).total_seconds() / 60
+            if age_min < 30:  # modificado en últimos 30 min = activo
+                active_watchdog = wlog
+                break
+
+        if active_watchdog or watchdog_logs:
+            # Leer el watchdog log más reciente
+            log_file = active_watchdog or watchdog_logs[0]
+            try:
+                all_lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                log_lines = all_lines[-lines:]
+                log_source = f"watchdog: {log_file.name}"
+                if svc_status == "unknown" or svc_status not in ("active",):
+                    age_min = (datetime.now(timezone.utc) - datetime.fromtimestamp(log_file.stat().st_mtime, tz=timezone.utc)).total_seconds() / 60
+                    svc_status = "active" if age_min < 10 else "inactive"
+            except Exception:
+                pass
+        elif train_logs:
+            # Leer el train log más reciente
+            try:
+                all_lines = train_logs[0].read_text(encoding="utf-8", errors="replace").splitlines()
+                log_lines = all_lines[-lines:]
+                log_source = f"train: {train_logs[0].name}"
+            except Exception:
+                pass
+
+        # Fallback: journalctl
+        if not log_lines:
+            try:
+                r = subprocess.run(
+                    ["journalctl", "-u", "ayram-train.service",
+                     "--no-pager", "-n", str(lines), "--output=short-iso"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                log_lines = r.stdout.strip().split("\n") if r.stdout.strip() else []
+                log_source = "journalctl"
+            except Exception:
+                pass
+
+        # Timestamps de logs disponibles para el frontend
+        available_logs = []
+        for f in (watchdog_logs[:5] + train_logs[:5]):
+            available_logs.append({
+                "name": f.name,
+                "modified": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
+                "size_kb": round(f.stat().st_size / 1024, 1),
+            })
 
         # 3. Parsear logs para extraer progreso
         import re
@@ -1157,6 +1202,8 @@ def get_train_status(lines: int = Query(150, le=500, description="Líneas de log
             "service_status":  svc_status,
             "service_since":   svc_since,
             "elapsed":         elapsed,
+            "log_source":      log_source,
+            "available_logs":  available_logs,
             "training_started": training_started,
             "total_models":    total_models,
             "completed":       done,
@@ -1165,8 +1212,8 @@ def get_train_status(lines: int = Query(150, le=500, description="Líneas de log
             "current_epoch":   current_epoch,
             "completed_models": completed_models,
             "recent_files":    recent_files,
-            "errors":          errors[-10:],  # últimos 10
-            "log_tail":        log_lines[-50:],  # últimas 50 líneas
+            "errors":          errors[-10:],
+            "log_tail":        log_lines[-50:],
         })
     except Exception as e:
         logger.error(f"/api/train/status error: {e}")

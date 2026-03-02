@@ -334,4 +334,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    from src.utils.pipeline_logger import pipeline_run
+    with pipeline_run("train") as run:
+        main()
+        run["details"] = {"script": "train"}

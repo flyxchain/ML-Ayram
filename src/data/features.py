@@ -355,7 +355,11 @@ def run_all():
             except Exception as e:
                 logger.error(f"Error {pair} {tf}: {e}")
     logger.success(f"✅ Features completados. Total filas: {total}")
+    return total
 
 
 if __name__ == "__main__":
-    run_all()
+    from src.utils.pipeline_logger import pipeline_run
+    with pipeline_run("features") as run:
+        total = run_all()
+        run["rows_processed"] = total

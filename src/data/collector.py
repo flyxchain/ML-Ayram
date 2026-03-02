@@ -500,9 +500,18 @@ def download_incremental():
 
 if __name__ == "__main__":
     import sys
+    from src.utils.pipeline_logger import pipeline_run, log_skip, is_forex_market_open
+
     if "--full" in sys.argv:
         logger.info("Iniciando descarga histórica completa...")
-        download_historical(years=3)
+        with pipeline_run("collector") as run:
+            total = download_historical(years=3)
+            run["rows_processed"] = total
     else:
+        if not is_forex_market_open():
+            log_skip("collector", "Mercado cerrado (fin de semana)")
+            sys.exit(0)
         logger.info("Iniciando descarga incremental...")
-        download_incremental()
+        with pipeline_run("collector") as run:
+            total = download_incremental()
+            run["rows_processed"] = total
